@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment & secrets
+.env
+# Google service account key
+wise-weaver-509208-b9-54cec59c6c1d.json
+
+# Local tool install (only used from this checkout)
+google-cloud-sdk/
+
+# Sample takeout archives (dev fixtures, re-downloadable)
+data/
+
+# Scratch artifacts (tickets)
+.scratch/
