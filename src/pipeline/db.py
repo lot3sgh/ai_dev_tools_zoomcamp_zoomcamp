@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import psycopg
+from psycopg import sql
 
 from pipeline import config
 
@@ -111,4 +112,18 @@ def ensure_schemas() -> None:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(DDL)
+            # keep delete-then-insert cheap on pre-existing bronze tables too
+            cur.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'bronze'"
+            )
+            for (family,) in cur.fetchall():
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index} ON bronze.{} (_source_file)"
+                    ).format(
+                        sql.Identifier(family),
+                        index=sql.Identifier(f"{family}_source_file_idx"),
+                    )
+                )
         conn.commit()
