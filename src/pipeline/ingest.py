@@ -72,6 +72,15 @@ def ensure_bronze_table(conn: psycopg.Connection, family: str, header: Sequence[
                     sql.Identifier(family), sql.Identifier(c)
                 )
             )
+        # delete-then-insert per source file must not scan the whole family table
+        cur.execute(
+            sql.SQL(
+                "CREATE INDEX IF NOT EXISTS {index} ON bronze.{} (_source_file)"
+            ).format(
+                sql.Identifier(family),
+                index=sql.Identifier(f"{family}_source_file_idx"),
+            )
+        )
     conn.commit()
 
 

@@ -8,10 +8,37 @@ dropped, so runs are isolated.
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from pathlib import Path
 
+import psycopg
 import pytest
+
+from pipeline import config
+
+TEST_DATABASE = "health_pipeline_test"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _test_database():
+    """Point the suite at a dedicated database so real data is never touched.
+
+    Creates health_pipeline_test once per session (superuser pipeline can
+    create databases), then every test DROPs/recreates schemas inside it.
+    """
+    os.environ["PGDATABASE"] = TEST_DATABASE
+    maintenance = psycopg.conninfo.make_conninfo(**{
+        **{k: config.db_env()[k] for k in ("host", "port", "user", "password")},
+        "dbname": "postgres",
+    })
+    with psycopg.connect(maintenance, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (TEST_DATABASE,))
+            exists = cur.fetchone() is not None
+        if not exists:
+            conn.execute(f"CREATE DATABASE {TEST_DATABASE}")
+    yield
 
 # ---------------------------------------------------------------- environment
 
