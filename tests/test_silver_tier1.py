@@ -110,13 +110,13 @@ def test_temperature_maps_night_rows_and_skips_samples(reset_db, source_dir):
     with db.connect() as conn:
         rows = _q(conn, "SELECT type, sleep_start, temperature_samples, nightly_temperature "
                         "FROM silver.temperature ORDER BY sleep_start")
-        assert len(rows) == 2          # sample row not mapped, not rejected
+        assert len(rows) == 2          # sample row + bad nightly row not mapped
         assert rows[0][0] == "IDT"
         assert float(rows[0][3]) == 28.44326710816777
         assert rows[1][2] == 547
-        # the per-sample row was silently skipped, so temperature produced no rejections
-        assert _q(conn, "SELECT count(*) FROM silver.rejected_rows "
-                        "WHERE family = 'temperature'")[0][0] == 0
+        # the per-sample row is skipped silently; the bad nightly row is rejected
+        rej = _q(conn, "SELECT reason FROM silver.rejected_rows WHERE family = 'temperature'")
+        assert [r[0] for r in rej] == ["not a number: 'not-a-number'"]
     assert _sync(source_dir) == 0                     # rerun: no duplicates
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM silver.temperature")[0][0] == 2

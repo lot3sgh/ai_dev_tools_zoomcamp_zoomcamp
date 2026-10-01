@@ -98,6 +98,7 @@ SPO2_CSV = """timestamp,average_value,lower_bound,upper_bound,value
 TEMP_CSV = """type,sleep_start,sleep_end,temperature_samples,nightly_temperature,baseline_relative_sample_sum,baseline_relative_nightly_standard_deviation,baseline_relative_sample_standard_deviation,recorded_time,temperature,sensor_type
 IDT,2026-01-03T01:24,2026-01-03T09:03:30,453,28.44326710816777,-456.5484935897439,1.3246847872435916,0.5,,,
 IDT,2026-01-04T00:21,2026-01-04T07:30:00,547,28.3981718464351,-200.5,1.1,0.4,,,
+IDT,2026-01-05T00:10,2026-01-05T08:00:00,500,not-a-number,,-1.2,0.3,,,
 ,,,,,,,,2026-01-06T03:00:00,28.5,skin
 """
 
