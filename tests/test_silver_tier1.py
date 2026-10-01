@@ -99,3 +99,24 @@ def test_spo2_value_precedence_and_rerun_stable(reset_db, source_dir):
     assert _sync(source_dir) == 0                     # rerun: no duplicates
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM silver.spo2")[0][0] == 2
+
+
+def test_temperature_maps_night_rows_and_skips_samples(reset_db, source_dir):
+    """Night-summary rows are typed (append mode); per-sample rows stay in bronze
+    and are skipped silently, never rejected (ticket 05)."""
+    from pipeline import db
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        rows = _q(conn, "SELECT type, sleep_start, temperature_samples, nightly_temperature "
+                        "FROM silver.temperature ORDER BY sleep_start")
+        assert len(rows) == 2          # sample row not mapped, not rejected
+        assert rows[0][0] == "IDT"
+        assert float(rows[0][3]) == 28.44326710816777
+        assert rows[1][2] == 547
+        # the per-sample row was silently skipped, so temperature produced no rejections
+        assert _q(conn, "SELECT count(*) FROM silver.rejected_rows "
+                        "WHERE family = 'temperature'")[0][0] == 0
+    assert _sync(source_dir) == 0                     # rerun: no duplicates
+    with db.connect() as conn:
+        assert _q(conn, "SELECT count(*) FROM silver.temperature")[0][0] == 2

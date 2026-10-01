@@ -95,6 +95,12 @@ SPO2_CSV = """timestamp,average_value,lower_bound,upper_bound,value
 2026-09-18T10:01:00Z,99.0,,,not-a-number
 """
 
+TEMP_CSV = """type,sleep_start,sleep_end,temperature_samples,nightly_temperature,baseline_relative_sample_sum,baseline_relative_nightly_standard_deviation,baseline_relative_sample_standard_deviation,recorded_time,temperature,sensor_type
+IDT,2026-01-03T01:24,2026-01-03T09:03:30,453,28.44326710816777,-456.5484935897439,1.3246847872435916,0.5,,,
+IDT,2026-01-04T00:21,2026-01-04T07:30:00,547,28.3981718464351,-200.5,1.1,0.4,,,
+,,,,,,,,2026-01-06T03:00:00,28.5,skin
+"""
+
 
 def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
     """Create a small synthetic Google Health takeout archive."""
@@ -108,6 +114,7 @@ def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
         "Takeout/Google Health/Heart Rate Variability/hrv.csv": HRV_CSV,
         "Takeout/Google Health/Stress Score/stress.csv": STRESS_CSV,
         "Takeout/Google Health/Oxygen Saturation (SpO2)/spo2.csv": SPO2_CSV,
+        "Takeout/Google Health/Temperature/temperature.csv": TEMP_CSV,
     })
 
 

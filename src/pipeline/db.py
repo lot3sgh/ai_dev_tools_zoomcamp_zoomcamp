@@ -138,6 +138,19 @@ CREATE TABLE IF NOT EXISTS silver.spo2 (
     _takeout       TEXT,
     _source_file   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS silver.temperature (
+    type                                        TEXT,
+    sleep_start                                 TIMESTAMPTZ,
+    sleep_end                                   TIMESTAMPTZ,
+    temperature_samples                         INTEGER,
+    nightly_temperature                         NUMERIC,
+    baseline_relative_sample_sum                NUMERIC,
+    baseline_relative_nightly_standard_deviation  NUMERIC,
+    baseline_relative_sample_standard_deviation NUMERIC,
+    _takeout                                    TEXT,
+    _source_file                                TEXT
+);
 """
 
 

@@ -18,6 +18,7 @@ CURATED_FAMILIES: dict[str, str] = {
     "heart_rate_variability": "hrv",
     "stress_score": "stress",
     "oxygen_saturation_spo2": "spo2",
+    "temperature": "temperature",
 }
 
 
@@ -221,6 +222,30 @@ def _spo2(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
     return values, (ts,)
 
 
+def _temperature(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
+    # Hygiene probe: the family mixes night-summary rows (type/sleep_start/
+    # nightly_temperature/temperature_samples, ~159 rows) with per-sample rows
+    # (recorded_time/temperature/sensor_type, ~196k rows). We map the nightly
+    # summaries; the sample-level rows stay bronze-only (skipped, not rejected).
+    kind = _t(row.get("type"))
+    sleep_start = _dt(row.get("sleep_start"))
+    if kind is None or sleep_start is None:
+        raise _Skip("per-sample temperature rows stay in bronze")
+    values = (
+        kind,
+        sleep_start,
+        _dt(row.get("sleep_end")),
+        _i(row.get("temperature_samples")),
+        _f(row.get("nightly_temperature")),
+        _f(row.get("baseline_relative_sample_sum")),
+        _f(row.get("baseline_relative_nightly_standard_deviation")),
+        _f(row.get("baseline_relative_sample_standard_deviation")),
+        takeout,
+        source_file,
+    )
+    return values, ()  # append mode: no defensible natural key
+
+
 # silver table -> (key columns, row builder); key columns None = append mode
 _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "sleep_score": (["sleep_log_entry_id"], _sleep),
@@ -230,6 +255,7 @@ _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "hrv": (None, _hrv),
     "stress": (["date"], _stress),
     "spo2": (["timestamp"], _spo2),
+    "temperature": (None, _temperature),
 }
 
 
@@ -284,6 +310,8 @@ def build_family(
             try:
                 values, _keys = builder(row, takeout, source_file)
                 prepared.append(values)
+            except _Skip:
+                continue  # deliberately-unmapped row (stays bronze-only), not a failure
             except _Rejected as exc:
                 cur.execute(
                     sql.SQL(
