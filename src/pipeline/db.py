@@ -117,6 +117,17 @@ CREATE TABLE IF NOT EXISTS silver.hrv (
     _takeout                       TEXT,
     _source_file                   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS silver.stress (
+    date                    DATE PRIMARY KEY,
+    stress_score            INTEGER,
+    sleep_points            INTEGER,
+    responsiveness_points   INTEGER,
+    exertion_points         INTEGER,
+    status                  TEXT,
+    _takeout                TEXT,
+    _source_file            TEXT
+);
 """
 
 

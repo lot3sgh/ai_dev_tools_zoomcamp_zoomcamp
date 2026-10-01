@@ -16,6 +16,7 @@ CURATED_FAMILIES: dict[str, str] = {
     "paired_devices": "device",
     "your_profile": "profile",
     "heart_rate_variability": "hrv",
+    "stress_score": "stress",
 }
 
 
@@ -181,6 +182,23 @@ def _hrv(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
     return values, ()  # append mode: no natural key (timestamps collide across files)
 
 
+def _stress(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
+    day = _d(row.get("date"))
+    if day is None:
+        raise _Rejected("missing date")
+    values = (
+        day,
+        _i(row.get("stress_score")),
+        _i(row.get("sleep_points")),
+        _i(row.get("responsiveness_points")),
+        _i(row.get("exertion_points")),
+        _t(row.get("status")),
+        takeout,
+        source_file,
+    )
+    return values, (day,)
+
+
 # silver table -> (key columns, row builder); key columns None = append mode
 _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "sleep_score": (["sleep_log_entry_id"], _sleep),
@@ -188,6 +206,7 @@ _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "device": (["wire_id"], _device),
     "profile": (["id"], _profile),
     "hrv": (None, _hrv),
+    "stress": (["date"], _stress),
 }
 
 
