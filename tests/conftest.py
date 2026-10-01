@@ -101,6 +101,13 @@ IDT,2026-01-04T00:21,2026-01-04T07:30:00,547,28.3981718464351,-200.5,1.1,0.4,,,
 ,,,,,,,,2026-01-06T03:00:00,28.5,skin
 """
 
+ACTIVITY_CSV = """timestamp,steps,beats_per_minute,distance,data_source
+2026-09-20T00:05:00Z,14,72,5.2,Google Fitbit Air
+2026-09-20T00:05:00Z,14,72,5.2,Google Fitbit Air
+2026-09-19T23:59:00Z,0,65,0.1,Charge 4
+2026-09-19T23:58:00Z,BADROW,65,0.1,Charge 4
+"""
+
 
 def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
     """Create a small synthetic Google Health takeout archive."""
@@ -115,6 +122,7 @@ def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
         "Takeout/Google Health/Stress Score/stress.csv": STRESS_CSV,
         "Takeout/Google Health/Oxygen Saturation (SpO2)/spo2.csv": SPO2_CSV,
         "Takeout/Google Health/Temperature/temperature.csv": TEMP_CSV,
+        "Takeout/Google Health/Physical Activity_GoogleData/activity.csv": ACTIVITY_CSV,
     })
 
 

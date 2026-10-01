@@ -19,6 +19,7 @@ CURATED_FAMILIES: dict[str, str] = {
     "stress_score": "stress",
     "oxygen_saturation_spo2": "spo2",
     "temperature": "temperature",
+    "physical_activity_googledata": "activity",
 }
 
 
@@ -246,6 +247,24 @@ def _temperature(row: dict, takeout: str, source_file: str) -> tuple[tuple, tupl
     return values, ()  # append mode: no defensible natural key
 
 
+def _activity(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
+    ts = _dt(row.get("timestamp"))
+    if ts is None:
+        raise _Rejected("missing timestamp")
+    values = (
+        ts,
+        _i(row.get("steps")),
+        _i(row.get("beats_per_minute")),
+        _f(row.get("distance")),
+        _t(row.get("data_source")),
+        takeout,
+        source_file,
+    )
+    # append mode: probe shows duplicate (timestamp, data_source) pairs in the
+    # family, so no key is invented (upserting would silently collapse data)
+    return values, ()
+
+
 # silver table -> (key columns, row builder); key columns None = append mode
 _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "sleep_score": (["sleep_log_entry_id"], _sleep),
@@ -256,6 +275,7 @@ _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "stress": (["date"], _stress),
     "spo2": (["timestamp"], _spo2),
     "temperature": (None, _temperature),
+    "activity": (None, _activity),
 }
 
 

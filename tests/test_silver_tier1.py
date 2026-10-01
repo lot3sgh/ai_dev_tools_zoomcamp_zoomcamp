@@ -120,3 +120,28 @@ def test_temperature_maps_night_rows_and_skips_samples(reset_db, source_dir):
     assert _sync(source_dir) == 0                     # rerun: no duplicates
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM silver.temperature")[0][0] == 2
+
+
+def test_activity_append_mode_keeps_duplicate_pairs(reset_db, source_dir):
+    """Intraday activity in append mode: duplicate (timestamp, data_source) pairs
+    are legitimate and kept, reruns don't duplicate, bad rows rejected
+    (ticket 06)."""
+    from pipeline import db
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        rows = _q(conn, "SELECT timestamp, steps, beats_per_minute, distance, data_source "
+                        "FROM silver.activity ORDER BY timestamp, data_source")
+        assert len(rows) == 3          # BADROW not typed
+        # the deliberate duplicate pair survives append mode (a key would collapse it)
+        assert _q(conn, "SELECT count(*) FROM silver.activity WHERE timestamp = "
+                        "'2026-09-20T00:05:00+00:00'")[0][0] == 2
+        assert float(rows[0][3]) == 0.1   # earliest row: 23:59, Charge 4
+        assert rows[0][2] == 65
+        assert rows[2][2] == 72           # duplicate pair rows carry bpm 72
+        rej = _q(conn, "SELECT reason FROM silver.rejected_rows WHERE family = "
+                        "'physical_activity_googledata'")
+        assert len(rej) == 1 and "not an integer" in rej[0][0]
+    assert _sync(source_dir) == 0                     # rerun: no duplicates
+    with db.connect() as conn:
+        assert _q(conn, "SELECT count(*) FROM silver.activity")[0][0] == 3

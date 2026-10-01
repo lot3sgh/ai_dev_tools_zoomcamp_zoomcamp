@@ -151,6 +151,16 @@ CREATE TABLE IF NOT EXISTS silver.temperature (
     _takeout                                    TEXT,
     _source_file                                TEXT
 );
+
+CREATE TABLE IF NOT EXISTS silver.activity (
+    timestamp         TIMESTAMPTZ,
+    steps             INTEGER,
+    beats_per_minute  INTEGER,
+    distance          NUMERIC,
+    data_source       TEXT,
+    _takeout          TEXT,
+    _source_file      TEXT
+);
 """
 
 
