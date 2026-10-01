@@ -152,4 +152,5 @@ def reset_db() -> None:
             cur.execute("DROP SCHEMA IF EXISTS bronze CASCADE")
             cur.execute("DROP SCHEMA IF EXISTS silver CASCADE")
             cur.execute("DROP SCHEMA IF EXISTS pipeline CASCADE")
+            cur.execute("DROP SCHEMA IF EXISTS gold CASCADE")
     yield

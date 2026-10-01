@@ -22,6 +22,7 @@ DDL = """
 CREATE SCHEMA IF NOT EXISTS bronze;
 CREATE SCHEMA IF NOT EXISTS silver;
 CREATE SCHEMA IF NOT EXISTS pipeline;
+CREATE SCHEMA IF NOT EXISTS gold;
 
 CREATE TABLE IF NOT EXISTS pipeline.processed_files (
     file_id        TEXT PRIMARY KEY,
@@ -161,6 +162,98 @@ CREATE TABLE IF NOT EXISTS silver.activity (
     _takeout          TEXT,
     _source_file      TEXT
 );
+
+-- Gold: live read contract over silver (Phase 0b). UTC-day grain; night metrics
+-- (sleep/hrv/temperature) key to the date of the night they belong to.
+
+CREATE OR REPLACE VIEW gold.daily_health AS
+WITH days AS (
+    SELECT timestamp::date AS day FROM silver.activity
+    UNION SELECT date FROM silver.stress
+    UNION SELECT date_time::date FROM silver.active_zone_minutes
+    UNION SELECT timestamp::date FROM silver.sleep_score
+    UNION SELECT timestamp::date FROM silver.spo2
+    UNION SELECT timestamp::date FROM silver.hrv
+    UNION SELECT sleep_start::date FROM silver.temperature
+),
+sleep_day AS (SELECT timestamp::date AS day, max(overall_score) AS sleep_score FROM silver.sleep_score GROUP BY 1),
+stress_day AS (SELECT date AS day, max(stress_score) AS stress_score FROM silver.stress GROUP BY 1),
+steps_day AS (SELECT timestamp::date AS day, sum(steps) AS steps FROM silver.activity GROUP BY 1),
+azm_day AS (SELECT date_time::date AS day, sum(total_minutes) AS azm_minutes FROM silver.active_zone_minutes GROUP BY 1),
+hrv_day AS (SELECT timestamp::date AS day, avg(rmssd) AS avg_hrv_rmssd FROM silver.hrv GROUP BY 1),
+spo2_day AS (SELECT timestamp::date AS day, avg(value) AS avg_spo2 FROM silver.spo2 WHERE value IS NOT NULL GROUP BY 1),
+temp_day AS (SELECT sleep_start::date AS day, max(nightly_temperature) AS nightly_temperature FROM silver.temperature GROUP BY 1)
+SELECT d.day AS date,
+       sl.sleep_score, st.stress_score, pd.steps, az.azm_minutes,
+       hr.avg_hrv_rmssd, sp.avg_spo2, tp.nightly_temperature
+FROM days d
+LEFT JOIN sleep_day sl ON sl.day = d.day
+LEFT JOIN stress_day st ON st.day = d.day
+LEFT JOIN steps_day pd ON pd.day = d.day
+LEFT JOIN azm_day az ON az.day = d.day
+LEFT JOIN hrv_day hr ON hr.day = d.day
+LEFT JOIN spo2_day sp ON sp.day = d.day
+LEFT JOIN temp_day tp ON tp.day = d.day;
+
+CREATE OR REPLACE VIEW gold.sleep_summary AS
+WITH nights AS (
+    SELECT DISTINCT ON (timestamp::date)
+           timestamp::date AS night,
+           overall_score,
+           deep_sleep_in_minutes,
+           resting_heart_rate,
+           restlessness
+    FROM silver.sleep_score
+    ORDER BY timestamp::date, timestamp DESC
+),
+hrv_night AS (SELECT timestamp::date AS night, avg(rmssd) AS rmssd, avg(coverage) AS coverage
+               FROM silver.hrv GROUP BY 1),
+temp_night AS (SELECT sleep_start::date AS night,
+               max(nightly_temperature) AS nightly_temperature,
+               max(baseline_relative_nightly_standard_deviation) AS temperature_deviation
+               FROM silver.temperature GROUP BY 1)
+SELECT n.night,
+       n.overall_score,
+       n.deep_sleep_in_minutes,
+       n.resting_heart_rate,
+       n.restlessness,
+       h.rmssd,
+       h.coverage AS hrv_coverage,
+       t.nightly_temperature,
+       t.temperature_deviation,
+       AVG(n.overall_score) OVER (ORDER BY n.night ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d_score
+FROM nights n
+LEFT JOIN hrv_night h ON h.night = n.night
+LEFT JOIN temp_night t ON t.night = n.night;
+
+CREATE OR REPLACE VIEW gold.activity_trends AS
+WITH steps AS (
+    SELECT date_trunc('week', timestamp)::date AS week_start, sum(steps) AS steps
+    FROM silver.activity GROUP BY 1
+),
+azm AS (
+    SELECT date_trunc('week', date_time)::date AS week_start,
+           sum(total_minutes) AS azm_minutes,
+           count(DISTINCT date_time::date) AS active_days
+    FROM silver.active_zone_minutes GROUP BY 1
+)
+SELECT COALESCE(s.week_start, a.week_start) AS week_start,
+       COALESCE(s.steps, 0) AS steps,
+       COALESCE(a.azm_minutes, 0) AS azm_minutes,
+       COALESCE(a.active_days, 0) AS active_days
+FROM steps s
+FULL OUTER JOIN azm a ON s.week_start = a.week_start;
+
+CREATE OR REPLACE VIEW gold.freshness AS
+SELECT p.name AS takeout,
+       p.md5,
+       p.status,
+       p.row_count,
+       p.processed_at,
+       COALESCE(r.rejected, 0) AS rejected_rows
+FROM pipeline.processed_files p
+LEFT JOIN (SELECT takeout, count(*) AS rejected FROM silver.rejected_rows GROUP BY 1) r
+       ON r.takeout = p.name;
 """
 
 
