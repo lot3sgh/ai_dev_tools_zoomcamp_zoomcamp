@@ -257,6 +257,27 @@ LEFT JOIN (SELECT takeout, count(*) AS rejected FROM silver.rejected_rows GROUP 
 """
 
 
+def provision_dashboard_role(conn: psycopg.Connection, password: str) -> None:
+    """Idempotently create the read-only analytics role (SELECT on silver/gold).
+
+    Password comes from the environment and is inlined as a SQL literal so it
+    can never be interpreted as SQL.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL(
+                "DO $do$ BEGIN\n"
+                "  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dashboard') THEN\n"
+                "    CREATE ROLE dashboard LOGIN;\n"
+                "  END IF;\n"
+                "END $do$;\n"
+                "ALTER ROLE dashboard PASSWORD {pw};\n"
+                "GRANT USAGE ON SCHEMA silver, gold TO dashboard;\n"
+                "GRANT SELECT ON ALL TABLES IN SCHEMA silver, gold TO dashboard;"
+            ).format(pw=sql.Literal(password))
+        )
+
+
 def ensure_schemas() -> None:
     """Create schemas and fixed tables; safe to run on every invocation."""
     with connect() as conn:
@@ -276,4 +297,7 @@ def ensure_schemas() -> None:
                         index=sql.Identifier(f"{family}_source_file_idx"),
                     )
                 )
+        password = config.dashboard_password()
+        if password:
+            provision_dashboard_role(conn, password)
         conn.commit()

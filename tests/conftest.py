@@ -21,6 +21,9 @@ from pipeline import config
 # a .env at the repo root supplies POSTGRES_DB/USER/PASSWORD, PGHOST, PGPORT.
 config.load_env()
 
+# The read-only analytics login (Grafana/chatbot); ensure_schemas provisions it.
+os.environ.setdefault("DASHBOARD_DB_PASSWORD", "test_dashboard_pw")
+
 TEST_DATABASE = "health_pipeline_test"
 
 

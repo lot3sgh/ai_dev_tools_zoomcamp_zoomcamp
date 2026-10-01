@@ -53,6 +53,11 @@ def db_env() -> dict[str, str]:
     }
 
 
+def dashboard_password() -> str | None:
+    """Password for the read-only analytics login; None disables provisioning."""
+    return os.environ.get("DASHBOARD_DB_PASSWORD")
+
+
 def sa_key_path() -> Path | None:
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if path:
