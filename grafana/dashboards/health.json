@@ -1,0 +1,87 @@
+{
+  "uid": "health-overview",
+  "title": "Health Overview",
+  "tags": ["health"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "15m",
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Sleep score (30d)",
+      "datasource": { "type": "postgres", "uid": "postgres-health" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 80}] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT night AS time, overall_score AS value FROM gold.sleep_summary ORDER BY 1",
+          "datasource": { "type": "postgres", "uid": "postgres-health" }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Weekly steps (activity_trends)",
+      "datasource": { "type": "postgres", "uid": "postgres-health" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{"color": "blue", "value": null}] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT week_start AS time, steps AS value FROM gold.activity_trends ORDER BY 1",
+          "datasource": { "type": "postgres", "uid": "postgres-health" }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Pipeline freshness",
+      "datasource": { "type": "postgres", "uid": "postgres-health" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT takeout, status, row_count, rejected_rows, processed_at AS time FROM gold.freshness ORDER BY processed_at DESC",
+          "datasource": { "type": "postgres", "uid": "postgres-health" }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HRV (sleep_summary)",
+      "datasource": { "type": "postgres", "uid": "postgres-health" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT night AS time, rmssd AS value FROM gold.sleep_summary WHERE rmssd IS NOT NULL ORDER BY 1",
+          "datasource": { "type": "postgres", "uid": "postgres-health" }
+        }
+      ]
+    }
+  ]
+}

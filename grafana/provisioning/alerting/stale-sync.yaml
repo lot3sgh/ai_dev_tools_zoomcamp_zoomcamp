@@ -1,0 +1,64 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Pipeline Health
+    folder: Health
+    interval: 5m
+    rules:
+      - uid: takeout-sync-stale
+        title: Takeout sync is stale
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: postgres-health
+            model:
+              refId: A
+              datasource:
+                type: postgres
+                uid: postgres-health
+              format: table
+              intervalMs: 1000
+              maxDataPoints: 100
+              rawSql: >-
+                SELECT now() AS time, EXTRACT(EPOCH FROM (now() - MAX(processed_at))) AS age_seconds
+                FROM gold.freshness
+          - refId: B
+            datasourceUid: __expr__
+            type: reduce
+            expression: A
+            reducer: last
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            type: threshold
+            expression: B
+            conditions:
+              - evaluator:
+                  type: gt
+                  params: [432000]
+              - operator:
+                  type: and
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [432000]
+                  operator:
+                    type: and
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No Takeout synced for over 5 days"
+        isPaused: false

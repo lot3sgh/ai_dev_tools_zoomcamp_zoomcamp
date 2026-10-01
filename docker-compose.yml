@@ -17,5 +17,26 @@ services:
       timeout: 3s
       retries: 12
 
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: health-pipeline-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me_grafana}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/health.json
+      POSTGRES_DB: ${POSTGRES_DB}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   health_pipeline_pgdata:
+  grafana_data:

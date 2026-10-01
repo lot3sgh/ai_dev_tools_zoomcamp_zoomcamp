@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: Health Pipeline Postgres
+    uid: postgres-health
+    type: postgres
+    access: proxy
+    url: db:5432
+    user: dashboard
+    database: ${POSTGRES_DB}
+    secureJsonData:
+      password: ${DASHBOARD_DB_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
