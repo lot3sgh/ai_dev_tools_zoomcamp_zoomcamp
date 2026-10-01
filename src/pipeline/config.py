@@ -32,18 +32,34 @@ def load_env() -> None:
     load_env_file()
 
 
+def _first_env(*names: str, default: str) -> str:
+    """First set variable among *names* (libpq-style wins over POSTGRES_*)."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
 def db_env() -> dict[str, str]:
+    # Accept both the libpq names (PGPASSWORD/PGUSER/PGDATABASE) and the
+    # POSTGRES_* names used by .env / docker-compose (POSTGRES_PASSWORD & co.).
     return {
-        "dbname": os.environ.get("PGDATABASE", "health_pipeline"),
-        "host": os.environ.get("PGHOST", "localhost"),
-        "port": os.environ.get("PGPORT", "5433"),
-        "user": os.environ.get("PGUSER", "pipeline"),
-        "password": os.environ.get("PGPASSWORD", "pipeline_dev_password"),
+        "dbname": _first_env("PGDATABASE", "POSTGRES_DB", default="health_pipeline"),
+        "host": _first_env("PGHOST", default="localhost"),
+        "port": _first_env("PGPORT", default="5433"),
+        "user": _first_env("PGUSER", "POSTGRES_USER", default="pipeline"),
+        "password": _first_env("PGPASSWORD", "POSTGRES_PASSWORD", default="pipeline_dev_password"),
     }
 
 
 def sa_key_path() -> Path | None:
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if path:
-        return Path(path)
+        p = Path(path)
+        if not p.is_absolute():
+            # Resolve relative paths against the repo root, not the CWD, so
+            # the CLI works from any directory.
+            p = REPO_ROOT / p
+        return p if p.is_file() else None
     return DEFAULT_SA_KEY if DEFAULT_SA_KEY.is_file() else None

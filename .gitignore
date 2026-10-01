@@ -13,6 +13,7 @@ wheels/
 .env
 # Google service account key
 wise-weaver-509208-b9-54cec59c6c1d.json
+wise-weaver-509208-b9-577f86640845.json
 
 # Local tool install (only used from this checkout)
 google-cloud-sdk/
@@ -22,3 +23,6 @@ data/
 
 # Scratch artifacts (tickets)
 .scratch/
+
+# Review/explainer artifacts (lavish)
+.lavish/

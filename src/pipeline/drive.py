@@ -14,7 +14,10 @@ from pipeline import config
 from pipeline.sources import FileInfo
 
 DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
-DOWNLOAD_CHUNK = 1024 * 256
+# Chunk size for Drive downloads. Keep it large: each chunk is a separate HTTP
+# request, so a small chunk makes the transfer round-trip-bound on high-latency
+# links (256 KB chunks measured ~280 KB/s here; 8 MB chunks ~3 MB/s).
+DOWNLOAD_CHUNK = 8 * 1024 * 1024
 
 
 def build_service() -> Any:
@@ -77,8 +80,16 @@ class DriveSource:
         tmp.close()
         downloader = MediaIoBaseDownload(path.open("wb"), request, chunksize=DOWNLOAD_CHUNK)
         done = False
+        next_marker = 10
+        print(f"  downloading {info.name} ({info.size / 1e6:.0f} MB)", flush=True)
         while not done:
-            _status, done = downloader.next_chunk()
+            status, done = downloader.next_chunk()
+            if info.size:
+                pct = int(status.resumable_progress * 100 // info.size)
+                if pct >= next_marker:
+                    print(f"    {pct}%", flush=True)
+                    next_marker += 10
+        print("    done", flush=True)
         return path
 
     @staticmethod

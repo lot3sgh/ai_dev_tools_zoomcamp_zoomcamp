@@ -17,6 +17,10 @@ import pytest
 
 from pipeline import config
 
+# Same env resolution as the CLI itself (cli.main calls config.load_env):
+# a .env at the repo root supplies POSTGRES_DB/USER/PASSWORD, PGHOST, PGPORT.
+config.load_env()
+
 TEST_DATABASE = "health_pipeline_test"
 
 
