@@ -2,7 +2,7 @@
 
 Future initiatives for hosting and consuming the health pipeline as a home-lab service
 (Docker / K3S). Status uses task-list checkboxes; one checked box ≈ one PR-sized
-increment. Phase order matters — Phase 0 through 2 build the read-and-monitor loop,
+increment. Phase order matters — Phases 0a–2 build the read-and-monitor loop,
 Phase 3+ adds AI interactivity on top of the same database.
 
 ## Operating model
@@ -15,7 +15,37 @@ already idempotent and ledger-driven (ADR-0003).
 
 ---
 
-## Phase 0 — Dashboard first (zero new tooling)
+## Phase 0a — Silver expansion (Tier 1)
+
+Prerequisite to the gold views: the SPEC's four prime tables were the minimal set, and the
+dashboard/report contract needs these five typed, keyed tables. Mappings verified against
+live bronze schemas (probe 2026-10-01): intraday heart rate lives inside
+`physical_activity_googledata` (`beats_per_minute`); the `heart_rate` family is empty.
+
+- [ ] Add silver tables + row mappers (pattern: `silver.py` `_sleep`/`_azm` mappers):
+  - `silver.stress` ← `stress_score` — key `date`; carries sleep/responsiveness/exertion
+    points + status
+  - `silver.hrv` ← `heart_rate_variability` — key: night/date; rmssd, LF/HF, coverage
+  - `silver.spo2` ← `oxygen_saturation_spo2` — key `timestamp`; define precedence for
+    `average_value` vs `value` (sample rows show one populated, other NULL)
+  - `silver.temperature` ← `temperature` — key `(type, sleep_start)`; `nightly_temperature`
+    + sample statistics
+  - `silver.activity` ← `physical_activity_googledata` — **design question first**
+    (intraday, 9.9M rows, no clean natural key): composite-key upsert
+    `(timestamp, data_source)` vs typed-append with delete-by-`_source_file` (bronze-level
+    idempotency already exists); consider monthly partitioning if Grafana queries lag
+- [ ] Watch `silver.rejected_rows` per new family — new rejection classes are expected and
+      are the designed warning channel
+- [ ] ADR note on the promotion rule: promote when reports ask for typed/keyed values AND
+      the family has a defensible key and clean time grain; everything else stays
+      bronze-only (queryable via views) — same reasoning as ADR-0004
+
+**Done when:** gold views can be built against typed silver tables for stress, HRV, SpO2,
+temperature and intraday activity — with rejection counts visible in `gold.freshness`.
+
+---
+
+## Phase 0b — Dashboard first (zero new tooling)
 
 Assumption: **Grafana** with the built-in Postgres datasource (Metabase/Superset work the
 same). This is the earliest visible payoff.
@@ -98,6 +128,8 @@ Reuse across home-lab projects: the core stays generic, domain knowledge lives i
 - [ ] Bronze replace-vs-accumulate semantics for same-path files across takeouts
       (`DELETE ... WHERE _source_file = %s AND _takeout = %s`) — decide before takeouts
       accumulate (raised live during first Drive sync)
+- [ ] `silver.activity` intraday keying: composite-key upsert vs typed-append +
+      delete-by-`_source_file` (decided in Phase 0a)
 
 ## References
 
