@@ -17,6 +17,7 @@ CURATED_FAMILIES: dict[str, str] = {
     "your_profile": "profile",
     "heart_rate_variability": "hrv",
     "stress_score": "stress",
+    "oxygen_saturation_spo2": "spo2",
 }
 
 
@@ -199,6 +200,27 @@ def _stress(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
     return values, (day,)
 
 
+def _spo2(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
+    ts = _dt(row.get("timestamp"))
+    if ts is None:
+        raise _Rejected("missing timestamp")
+    # probe: `value` is the primary measure (68,133/68,248 rows); average_value
+    # is the sparse legacy column (115 rows) -> value wins, average_value falls back
+    value = _f(row.get("value"))
+    if value is None:
+        value = _f(row.get("average_value"))
+    values = (
+        ts,
+        value,
+        _f(row.get("average_value")),
+        _f(row.get("lower_bound")),
+        _f(row.get("upper_bound")),
+        takeout,
+        source_file,
+    )
+    return values, (ts,)
+
+
 # silver table -> (key columns, row builder); key columns None = append mode
 _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "sleep_score": (["sleep_log_entry_id"], _sleep),
@@ -207,6 +229,7 @@ _BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "profile": (["id"], _profile),
     "hrv": (None, _hrv),
     "stress": (["date"], _stress),
+    "spo2": (["timestamp"], _spo2),
 }
 
 

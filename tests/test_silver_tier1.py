@@ -7,7 +7,7 @@ operational contract from ADR-0003).
 
 from __future__ import annotations
 
-from tests.conftest import HRV_CSV, STRESS_CSV, make_zip
+from tests.conftest import HRV_CSV, SPO2_CSV, STRESS_CSV, make_zip
 
 
 def _sync(source_dir):
@@ -76,3 +76,26 @@ def test_stress_keyed_by_date_upserts_and_bad_row_rejected(reset_db, source_dir)
         assert _q(conn, "SELECT count(*) FROM silver.stress")[0][0] == 2
         assert _q(conn, "SELECT stress_score FROM silver.stress WHERE date = '2026-09-20'")[0][0] == 71
         assert _q(conn, "SELECT count(*) FROM silver.rejected_rows WHERE family = 'stress_score'")[0][0] == 1
+
+
+def test_spo2_value_precedence_and_rerun_stable(reset_db, source_dir):
+    """Typed SpO2 by timestamp; value is primary, average_value falls back;
+    reruns don't duplicate (ticket 03)."""
+    from pipeline import db
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        rows = _q(conn, "SELECT timestamp, value, average_value, lower_bound, upper_bound "
+                        "FROM silver.spo2 ORDER BY timestamp")
+        assert len(rows) == 2          # BADROW not typed
+        # earliest row has only average_value -> fallback into value
+        assert float(rows[0][1]) == 94.1
+        assert float(rows[0][4]) == 95.5
+        # later row has only value populated
+        assert float(rows[1][1]) == 95.2
+        assert rows[1][2] is None
+        rej = _q(conn, "SELECT reason FROM silver.rejected_rows WHERE family = 'oxygen_saturation_spo2'")
+        assert len(rej) == 1 and "not a number" in rej[0][0]
+    assert _sync(source_dir) == 0                     # rerun: no duplicates
+    with db.connect() as conn:
+        assert _q(conn, "SELECT count(*) FROM silver.spo2")[0][0] == 2

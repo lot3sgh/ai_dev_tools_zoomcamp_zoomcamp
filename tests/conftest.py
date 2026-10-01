@@ -89,6 +89,12 @@ STRESS_CSV = """date,stress_score,sleep_points,responsiveness_points,exertion_po
 2026-09-18,not-a-number,85,60,70,restful
 """
 
+SPO2_CSV = """timestamp,average_value,lower_bound,upper_bound,value
+2026-09-20T08:14:30Z,,,,95.2
+2026-09-19T10:01:00Z,94.1,93.0,95.5,
+2026-09-18T10:01:00Z,99.0,,,not-a-number
+"""
+
 
 def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
     """Create a small synthetic Google Health takeout archive."""
@@ -101,6 +107,7 @@ def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
         "Takeout/Google Health/Biometrics/Glucose 200706.csv": GLUCOSE_CSV,
         "Takeout/Google Health/Heart Rate Variability/hrv.csv": HRV_CSV,
         "Takeout/Google Health/Stress Score/stress.csv": STRESS_CSV,
+        "Takeout/Google Health/Oxygen Saturation (SpO2)/spo2.csv": SPO2_CSV,
     })
 
 

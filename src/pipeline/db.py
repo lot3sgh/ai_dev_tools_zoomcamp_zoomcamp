@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS silver.stress (
     _takeout                TEXT,
     _source_file            TEXT
 );
+
+CREATE TABLE IF NOT EXISTS silver.spo2 (
+    timestamp      TIMESTAMPTZ PRIMARY KEY,
+    value          NUMERIC,
+    average_value  NUMERIC,
+    lower_bound    NUMERIC,
+    upper_bound    NUMERIC,
+    _takeout       TEXT,
+    _source_file   TEXT
+);
 """
 
 
