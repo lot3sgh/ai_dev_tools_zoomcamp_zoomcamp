@@ -32,7 +32,8 @@ def test_sleep_typed_and_bad_row_rejected(reset_db, source_dir):
         assert good[3] == 75
         assert rows[2][1] == 82
         # BADROW lands in rejected_rows with a reason
-        rej = _q(conn, "SELECT family, reason, source_file FROM silver.rejected_rows")
+        rej = _q(conn, "SELECT family, reason, source_file FROM silver.rejected_rows "
+                        "WHERE family = 'sleep_score'")
         assert len(rej) == 1
         assert rej[0][0] == "sleep_score"
         assert "not a number" in rej[0][1]
@@ -100,7 +101,7 @@ def test_rerun_with_changed_value_upserts_not_duplicates(reset_db, source_dir, t
         assert devices[0][1] == "APP99.0"
         # sleep now fully valid -> a second run has no rejects for it
         assert _q(conn, "SELECT count(*) FROM silver.sleep_score")[0][0] == 3
-        assert _q(conn, "SELECT count(*) FROM silver.rejected_rows")[0][0] == 1  # original bad row, deduped
+        assert _q(conn, "SELECT count(*) FROM silver.rejected_rows WHERE family = 'sleep_score'")[0][0] == 1  # original bad row, deduped
     captured = capsys.readouterr()
     assert "Takeouts processed: 1" in captured.out
 

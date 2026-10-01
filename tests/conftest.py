@@ -77,6 +77,12 @@ GLUCOSE_CSV = """value
 5.5
 """
 
+HRV_CSV = """timestamp,rmssd,coverage,low_frequency,high_frequency,full_sleep_breathing_rate
+2026-09-20T03:14:30Z,51.7,0.901,678.7,817.2,12.1
+2026-09-20T03:14:30Z,52.1,0.902,681.0,820.0,12.2
+2026-09-18T02:45:00Z,BADROW,0.9,678.7,817.2,12.0
+"""
+
 
 def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
     """Create a small synthetic Google Health takeout archive."""
@@ -87,6 +93,7 @@ def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
         "Takeout/Google Health/Paired Devices/Devices.csv": DEVICES_CSV,
         "Takeout/Google Health/Your Profile/Profile.csv": PROFILE_CSV,
         "Takeout/Google Health/Biometrics/Glucose 200706.csv": GLUCOSE_CSV,
+        "Takeout/Google Health/Heart Rate Variability/hrv.csv": HRV_CSV,
     })
 
 

@@ -104,6 +104,19 @@ CREATE TABLE IF NOT EXISTS silver.rejected_rows (
     reason       TEXT NOT NULL,
     loaded_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS silver.hrv (
+    timestamp                      TIMESTAMPTZ,
+    rmssd                          NUMERIC,
+    coverage                       NUMERIC,
+    low_frequency                  NUMERIC,
+    high_frequency                 NUMERIC,
+    full_sleep_breathing_rate      NUMERIC,
+    full_sleep_standard_deviation  NUMERIC,
+    full_sleep_signal_to_noise     NUMERIC,
+    _takeout                       TEXT,
+    _source_file                   TEXT
+);
 """
 
 

@@ -28,9 +28,17 @@ def test_rerun_is_noop(reset_db, source_dir):
     assert out == 0
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM bronze.sleep_score")[0][0] == before
+        # fresh bronze rows total for a rerun: the ledger row_count is unchanged
+        # (fixture grows as new families are curated — derive from bronze, don't pin)
+        rows_total = _q(
+            conn,
+            "SELECT COALESCE(SUM((xpath('/row/cnt/text()', q)::text[])[1]::bigint), 0)"
+            " FROM (SELECT query_to_xml('SELECT count(*) AS cnt FROM bronze.'||table_name,"
+            " false, true, '') AS q FROM information_schema.tables WHERE table_schema='bronze') t",
+        )[0][0]
         assert _q(conn, "SELECT status, row_count FROM pipeline.processed_files")[0] == (
             "processed",
-            13,  # 4 sleep + 5 azm + 2 devices + 1 profile + 1 glucose
+            rows_total,
         )
         assert _q(conn, "SELECT count(*) FROM pipeline.processed_files")[0][0] == 1
 

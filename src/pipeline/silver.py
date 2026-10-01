@@ -15,6 +15,7 @@ CURATED_FAMILIES: dict[str, str] = {
     "active_zone_minutes_azm": "active_zone_minutes",
     "paired_devices": "device",
     "your_profile": "profile",
+    "heart_rate_variability": "hrv",
 }
 
 
@@ -22,6 +23,10 @@ class _Rejected(Exception):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
+
+
+class _Skip(Exception):
+    """Row is valid data we deliberately do not map (stays bronze-only)."""
 
 
 def _t(v: Any) -> str | None:
@@ -157,12 +162,32 @@ def _profile(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
     return values, (pid,)
 
 
-# silver table -> (key columns, row builder); defined after the builders
-_BUILDERS: dict[str, tuple[list[str], Callable]] = {
+def _hrv(row: dict, takeout: str, source_file: str) -> tuple[tuple, tuple]:
+    ts = _dt(row.get("timestamp"))
+    if ts is None:
+        raise _Rejected("missing timestamp")
+    values = (
+        ts,
+        _f(row.get("rmssd")),
+        _f(row.get("coverage")),
+        _f(row.get("low_frequency")),
+        _f(row.get("high_frequency")),
+        _f(row.get("full_sleep_breathing_rate")),
+        _f(row.get("full_sleep_standard_deviation")),
+        _f(row.get("full_sleep_signal_to_noise")),
+        takeout,
+        source_file,
+    )
+    return values, ()  # append mode: no natural key (timestamps collide across files)
+
+
+# silver table -> (key columns, row builder); key columns None = append mode
+_BUILDERS: dict[str, tuple[list[str] | None, Callable]] = {
     "sleep_score": (["sleep_log_entry_id"], _sleep),
     "active_zone_minutes": (["date_time", "heart_zone_id"], _azm),
     "device": (["wire_id"], _device),
     "profile": (["id"], _profile),
+    "hrv": (None, _hrv),
 }
 
 
@@ -191,7 +216,7 @@ def build_family(
 ) -> dict[str, int]:
     """Type one bronze family's rows (for one source file) into a silver table."""
     key_cols, builder = _BUILDERS[table]
-    stats = {"upserted": 0, "rejected": 0}
+    stats = {"written": 0, "rejected": 0}
     cols = _bronze_columns(conn, family)
 
     with conn.cursor() as cur:
@@ -243,26 +268,41 @@ def build_family(
                 stats["rejected"] += 1
 
         if prepared:
-            update_cols = [c for c in silver_cols if c not in key_cols]
-            insert_stmt = sql.SQL(
-                "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
-                " ON CONFLICT ({keys}) DO UPDATE SET {updates}"
-            ).format(
-                table=sql.Identifier(table),
-                cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
-                placeholders=sql.SQL(", ").join(
-                    sql.Placeholder() for _ in silver_cols
-                ),
-                keys=sql.SQL(", ").join(sql.Identifier(c) for c in key_cols),
-                updates=sql.SQL(", ").join(
-                    sql.SQL("{} = EXCLUDED.{}").format(
-                        sql.Identifier(c), sql.Identifier(c)
-                    )
-                    for c in update_cols
-                ),
-            )
+            if key_cols:
+                # keyed families: upsert on the natural key so changed values update in place
+                update_cols = [c for c in silver_cols if c not in key_cols]
+                insert_stmt = sql.SQL(
+                    "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
+                    " ON CONFLICT ({keys}) DO UPDATE SET {updates}"
+                ).format(
+                    table=sql.Identifier(table),
+                    cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
+                    placeholders=sql.SQL(", ").join(
+                        sql.Placeholder() for _ in silver_cols
+                    ),
+                    keys=sql.SQL(", ").join(sql.Identifier(c) for c in key_cols),
+                    updates=sql.SQL(", ").join(
+                        sql.SQL("{} = EXCLUDED.{}").format(
+                            sql.Identifier(c), sql.Identifier(c)
+                        )
+                        for c in update_cols
+                    ),
+                )
+            else:
+                # append families have no defensible natural key; the delete-by-source-file
+                # above keeps reruns idempotent without inventing a key that would
+                # silently collapse legitimate duplicate rows
+                insert_stmt = sql.SQL(
+                    "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
+                ).format(
+                    table=sql.Identifier(table),
+                    cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
+                    placeholders=sql.SQL(", ").join(
+                        sql.Placeholder() for _ in silver_cols
+                    ),
+                )
             cur.executemany(insert_stmt, prepared)
-            stats["upserted"] += len(prepared)
+            stats["written"] += len(prepared)
     conn.commit()
     return stats
 
@@ -273,5 +313,5 @@ def build(
     """Build silver for a curated family; no-op for bronze-only families."""
     table = CURATED_FAMILIES.get(family)
     if table is None:
-        return {"upserted": 0, "rejected": 0}
+        return {"written": 0, "rejected": 0}
     return build_family(conn, takeout, source_file, table, family)

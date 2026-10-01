@@ -13,7 +13,7 @@ def process(conn: psycopg.Connection, info, source, _md5: str | None = None) -> 
     silver_stats: dict[str, dict[str, int]] = {}
     for family, entry in stats["entries"]:
         built = silver.build(conn, info.name, entry, family)
-        if built.get("upserted") or built.get("rejected"):
+        if built.get("written") or built.get("rejected"):
             silver_stats[family] = built
     stats["silver"] = silver_stats
     return stats
