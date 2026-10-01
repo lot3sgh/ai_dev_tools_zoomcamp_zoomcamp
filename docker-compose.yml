@@ -26,7 +26,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me_grafana}
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/health.json
+      GF_AUTH_LOGIN_MAX_ATTEMPTS: "10"
       POSTGRES_DB: ${POSTGRES_DB}
       DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD}
     volumes:
