@@ -19,10 +19,12 @@ from assistant_core import OpenAICompatProvider, Provider, StubProvider
 from assistant import corpus
 from pipeline import config
 
-# Default model id for the OpenCode Go subscription. Verify the exact id from the OpenCode
-# Console model list before first use — never invent a model id; a wrong one fails loudly
-# at the gateway as a REFUSE, which is the designed outcome.
-DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
+# Default model for the OpenCode Go gateway. The wire model id is resolved from the
+# gateway's model list (curl https://opencode.ai/zen/go/v1/models) — `deepseek-v4-flash`
+# is verified there (2026-10-02). The `opencode-go/` prefix is OpenCode's own config
+# namespace (`opencode-go/<model-id>`); the API itself takes the bare id. Never guess an
+# id: a wrong one fails loudly at the gateway as a REFUSE, which is the designed outcome.
+DEFAULT_MODEL = "deepseek-v4-flash"
 
 
 class ProviderConfigError(RuntimeError):
@@ -86,4 +88,5 @@ def build_provider() -> Provider:
         model=model,
         api_key=config.llm_api_key(),
         provider_name=config.llm_provider() or None,
+        user_agent="health-assistant/0.3",
     )
