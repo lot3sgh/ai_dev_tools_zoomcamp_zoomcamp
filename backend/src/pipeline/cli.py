@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from pipeline import config, db, state
+from psycopg import sql
 from pipeline.runner import process
 from pipeline.sources import Source
 
@@ -23,7 +24,8 @@ def _bronze_summary(conn, takeout: str) -> dict[str, int]:
     with conn.cursor() as cur:
         for family in families:
             cur.execute(
-                "SELECT count(*) FROM bronze.%s WHERE _takeout = %%s" % family,
+                sql.SQL("SELECT count(*) FROM bronze.{} WHERE _takeout = %s").format(
+                    sql.Identifier(family)),
                 (takeout,),
             )
             counts[family] = cur.fetchone()[0]

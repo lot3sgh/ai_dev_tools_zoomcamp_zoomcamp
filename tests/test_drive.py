@@ -7,6 +7,10 @@ from pathlib import Path
 
 from pipeline.sources import FileInfo
 from tests.conftest import DEVICES_CSV, SLEEP_CSV, make_zip
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 class _FakeRequest:

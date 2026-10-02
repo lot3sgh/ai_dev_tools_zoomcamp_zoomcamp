@@ -16,6 +16,7 @@ import pytest
 from assistant_core import OpenAICompatProvider, StubProvider
 
 
+
 def _sync(source_dir):
     from pipeline.cli import main
 
@@ -24,6 +25,7 @@ def _sync(source_dir):
 
 # ---------------------------------------------------------------- stub (demo) seam
 
+@pytest.mark.integration
 def test_stub_provider_answers_corpus_questions_from_the_fixture(reset_db, source_dir, monkeypatch):
     """LLM_PROVIDER=stub: a corpus question executes its expected SQL against the DB."""
     from assistant import corpus, providers

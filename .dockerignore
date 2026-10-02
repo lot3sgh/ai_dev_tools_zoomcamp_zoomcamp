@@ -1,4 +1,4 @@
-# Build context: only requirements.txt and src/ are needed by the Dockerfile.
+# Build context: requirements.txt, backend/src/ and frontend/ are what the images need.
 .git
 .gitignore
 .venv

@@ -13,6 +13,8 @@ import psycopg
 import pytest
 
 from assistant_core import Registry, StubProvider
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 # conftest provisions the dashboard role; the assistant needs its own read-only role.
 

@@ -14,6 +14,8 @@ from psycopg import sql as psql
 
 from assistant_core import ToolResult
 
+from agent_hooks.sql_surface_guard import guard_sql
+
 # The Semantic Layer: exactly what provision_chatbot_role grants. Docs are fetched from the
 # DB comments; this list names the relations the tool is allowed to talk about.
 SURFACE: dict[str, list[str]] = {
@@ -72,6 +74,9 @@ class RunHealthQuery:
 
     def run(self, raw_sql: str) -> ToolResult:
         sql = raw_sql.strip().rstrip(";").strip()
+        ok, reason = guard_sql(sql)
+        if not ok:
+            return ToolResult(refusal=f"refused: {reason}")
         if not sql:
             return ToolResult(error="empty SQL")
 

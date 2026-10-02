@@ -16,6 +16,9 @@ from assistant_core import StubProvider
 
 
 from assistant import corpus, eval as evalmod  # noqa: E402
+import pytest
+
+
 
 
 def _sync(source_dir):
@@ -67,6 +70,7 @@ def test_corpus_is_machine_consumable():
 
 # ---------------------------------------------------------------- drift lock
 
+@pytest.mark.integration
 def test_hand_derived_expected_values_agree_with_the_fixture(reset_db, source_dir):
     """The golden numbers were derived by hand — prove they are the fixture's numbers.
 
@@ -109,6 +113,7 @@ def test_scoring_detects_wrong_values():
     assert not evalmod.rows_match([], [(1, "x")])
 
 
+@pytest.mark.integration
 def test_stub_self_check_passes_every_pair(reset_db, source_dir):
     """The deterministic path: expected SQL scripted into the stub must yield the expected
     rows — the full loop, judged at the executed-row seam, no network, no key."""
@@ -142,6 +147,7 @@ def test_few_shots_are_prompt_ready():
     assert first.question.split("?")[0] in text  # the seed question is present
 
 
+@pytest.mark.integration
 def test_few_shots_reach_the_system_prompt(reset_db, source_dir):
     """The corpus doubles as the few-shot bank: the provider actually sees the examples."""
     seen: list[list[dict]] = []

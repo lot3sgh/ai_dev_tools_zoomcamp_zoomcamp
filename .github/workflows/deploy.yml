@@ -1,0 +1,53 @@
+name: deploy
+
+# Deploy to the home-lab Linux host over SSH when the tests pass. The assistant is
+# LAN-only by design (privacy boundary, ADR-0006) — "the cloud URL" is the host's LAN
+# address. Requires repository secrets:
+#   SSH_HOST, SSH_USER, SSH_KEY          (deploy target — your Linux box)
+#   LLM_API_KEY, CHATBOT_DB_PASSWORD     (passed through to the host's .env via the runbook)
+# Manual trigger (workflow_dispatch) or on tags — pick one:
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  deploy:
+    name: build + gate + bring up chat on the host
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      # passed through to the host by the ssh-action `envs:` list below
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      CHATBOT_DB_PASSWORD: ${{ secrets.CHATBOT_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ship the monorepo to the host
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "."
+          target: "/opt/health-pipeline"
+      - name: Build, gate, and bring the chat service up
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: LLM_API_KEY,LLM_BASE_URL,LLM_MODEL,LLM_PROVIDER,CHATBOT_DB_PASSWORD
+          script: |
+            set -e
+            cd /opt/health-pipeline
+            export LLM_API_KEY LLM_BASE_URL LLM_MODEL LLM_PROVIDER CHATBOT_DB_PASSWORD
+            make chat
+            make eval-gate          # provider corpus gate — fails the deploy if <90%/100%
+            make chat-up
+            curl -sfN -X POST http://127.0.0.1:8000/api/chat \
+              -H 'Content-Type: application/json' \
+              -d '{"question":"how was my sleep last night?","session_id":"ci-deploy"}'

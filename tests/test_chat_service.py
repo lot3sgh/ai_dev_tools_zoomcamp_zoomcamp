@@ -13,6 +13,10 @@ import json
 import os
 
 from assistant_core import StubProvider
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 
@@ -67,16 +71,27 @@ def _q(conn, sql, params=None):
 
 # ---------------------------------------------------------------- the page
 
-def test_home_serves_the_single_file_ui():
+def test_home_serves_the_single_file_page_and_its_local_assets():
+    """The frontend is self-contained on this origin: local css/js, no CDN, no framework."""
     client = _client()
     resp = client.get("/")
     assert resp.status_code == 200
     html = resp.text
     assert "<!doctype html" in html.lower()
     assert 'name="viewport"' in html
-    # single self-contained page: no external assets, no framework
-    assert '<script src=' not in html
-    assert '<link rel="stylesheet"' not in html
+    assert "css/style.css" in html and 'src="js/app.js"' in html
+    # self-contained: nothing fetched from another origin, no framework
+    assert "http://" not in html and "https://" not in html
+    assert "react" not in html.lower() and "vue" not in html.lower()
+    for asset in ("css/style.css", "js/app.js", "js/api.js", "js/sse.js"):
+        assert client.get(f"/{asset}").status_code == 200
+
+
+def test_openapi_contract_is_served():
+    assert _client().get("/openapi.yaml").status_code == 200
+    # POST-only: a GET on /api/chat is not served (FastAPI 405, or 404 via the static
+    # mount) — the contract declares the POST verb only.
+    assert _client().get("/api/chat").status_code in (404, 405)
 
 
 def test_no_provider_is_a_clean_state_not_a_crash(monkeypatch):

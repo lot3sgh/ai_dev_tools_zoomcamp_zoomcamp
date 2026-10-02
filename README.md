@@ -1,81 +1,108 @@
-# Google Health Takeout → Postgres Pipeline
+# Health Assistant — Google Health Takeout pipeline + conversational AI
 
-Ingests Google Health (Fitbit) takeout archives from Google Drive (or a local folder of zips) into Postgres with a **bronze → silver → gold + Grafana** stack. Every CSV lands verbatim in bronze (TEXT, family-per-table, with provenance); 9 curated families are typed into silver (entities upsert by natural key; high-frequency families append idempotently); gold views are the read contract (daily health, sleep summary, weekly trends, freshness) served to Grafana through a read-only `dashboard` role. See `docs/SPEC.md` for the spec, `docs/adr/` for the architecture decisions, and `ROADMAP.md` for what's next.
+**The problem.** A home-lab user owns ~11M rows of personal health data (Google Health
+takeouts) landing in Postgres as bronze → silver → gold. Every health question ("how
+was my sleep last night?", "which ISO week was I most active?") still ended in
+hand-written SQL — the person who owns the data cannot ask it conversationally.
 
-## Quickstart
+**The system.** A full-stack app, all on one home server:
 
-```bash
-# 1. Bring up the stack: Postgres (docker compose; host port 5433, DB creds from .env)
-#    and Grafana (host port 3000, see .env.example for its login vars)
-docker compose up -d       # or: make up  (db only)
+- a **pipeline** that ingests Google Health takeouts (Drive or local) into Postgres
+  bronze → silver → gold + Grafana;
+- a **text-to-SQL health chatbot** (FastAPI + SSE) that answers plain-language
+  questions by writing and executing read-only SQL over the **Semantic Layer**
+  (gold views + whitelisted silver), under a strict execute contract, streamed to a
+  single-page mobile UI;
+- a **measured quality gate** (25-pair eval corpus, ≥90% executed-correct, 100%
+  refusals) that blocks merges per provider;
+- an **agent extension pack** (capability registry, enforced guardrails, MCP server,
+  custom-agent profile) and full security/ops/CI documentation.
 
-# 2. Install deps (uv, Python >= 3.12)
-uv sync --extra dev
+Expected behavior, in one question: *"how was my sleep last night?"* →
+the model proposes SQL → the read-only `chatbot` role executes it bounded by rails
+(10 s timeout, 500-row cap, EXPLAIN dry-run) → the answer streams token-by-token →
+the exchange lands in `pipeline.chat_log` → you can 👍/👎 it. Out-of-surface
+questions ("what is my blood pressure?") are refused, never invented.
 
-# 3. Sync the local sample archive (data/*.zip) into bronze + silver + gold
-make sync-local
+## Architecture & technologies
 
-# 4. Query it
-docker exec -it health-pipeline-postgres psql -U pipeline -d health_pipeline
-
-# 5. Or look at it: http://localhost:3000 (Grafana, logs in with GRAFANA_ADMIN_*)
+```
+frontend/ (HTML+CSS+JS, no build step, noddy-free)
+   │  fetch + SSE   ── single origin ──
+backend/src/assistant/ (FastAPI + SSE chat service, OpenAI-compatible provider seam)
+   │  run_health_query (execute contract) + agent-hooks guard + Chat Log
+backend/src/pipeline/ (bronze → silver → gold + Grafana sync; Postgres)
+   │
+Postgres 16 (docker): bronze/silver/gold schemas, chatbot + dashboard read-only roles
+Grafana (docker): dashboards over gold
+MCP server (mcp-server/) + agent pack: the same engine for agent clients
 ```
 
-## Commands
+| Layer | Technology | Role |
+|---|---|---|
+| Frontend | vanilla ES modules, `node --test` | single-page mobile chat UI; centralized `api.js` client |
+| Backend | Python 3.12, FastAPI, Uvicorn, psycopg 3 | SSE chat API + the pipeline CLI |
+| LLM seam | OpenAI-compatible client (stdlib) | one config flip: OpenCode Go · Ollama · BMF · DeepSeek |
+| Database | Postgres 16 (docker compose) | bronze/silver/gold + chat_log; roles enforce the surface |
+| Containerization | Dockerfile (sync) + Dockerfile.chat + compose | full system on the LAN via `docker compose up` |
+| CI/CD | GitHub Actions | tests + mypy + eval gate on merge; SSH deploy template |
+| Agent pack | registry, hooks, MCP, custom agent | Module-5 deliverables (see docs/agent-extension-pack.md) |
 
-| Command | What it does |
-|---|---|
-| `docker compose up -d` | start the full stack: Postgres 16 (:5433) + Grafana (:3000, waits for a healthy DB) |
-| `make up` / `make down` | start / stop the Postgres container only |
-| `make sync-local` | sync takeout zips from `./data` |
-| `make sync-drive` | sync takeout zips from Google Drive |
-| `make test` | 28-test E2E suite (synthetic fixture, throwaway Postgres) |
-| `make typecheck` | mypy over the package |
-| `make image` / `make sync-drive-container` | build / run the containerized sync runner (Linux deployment) |
-| `make backup` | take a `pg_dump` now via `deploy/backup.sh` |
-| `make install-timers` | install the daily sync + nightly backup systemd timers (**Linux host only**) |
+## Quickstart (local dev)
 
-Direct CLI: `uv run pipeline sync --source local --path <dir>` / `--source drive`, with `--limit N` to scope a dev run.
+```bash
+docker compose up -d db                 # Postgres on 5433 (Grafana too: up -d)
+uv sync --extra dev
+make sync-local                         # ingest ./data/*.zip → bronze/silver/gold
+# zero-key demo (fixture DB, deterministic "corpus" provider):
+uv run pipeline eval --self-check       # builds the demo fixture DB
+LLM_PROVIDER=stub PGDATABASE=health_pipeline_eval \
+  uv run uvicorn assistant.server:create_app --factory --host 0.0.0.0 --port 8000
+# real model (see .env.example for the LLM block + privacy statement):
+uv run uvicorn assistant.server:create_app --factory --host 0.0.0.0 --port 8000
+# open http://localhost:8000  (or http://<host>:8000 on the LAN)
+```
 
-Linux deployment (the target for automation): see `docs/deploy.md` — the same code runs as a
-docker container via the compose `sync` service, scheduled by systemd timers, with nightly
-off-box `pg_dump` backups. Nothing is installed on the development Mac by design.
+## Test
 
-## Environment
+```bash
+uv run pytest -q                        # full suite: integration (throwaway Postgres) + unit
+make test-unit                          # unit-only: -m "not integration"
+cd frontend && npm test                 # SSE parser + API client (node --test)
+uv run python -m mypy                   # typecheck
+uv run pipeline eval --self-check       # deterministic corpus self-check (25 pairs)
+make eval-gate                          # real-provider gate (skips without LLM_API_KEY)
+```
 
-Credentials live in `.env` (gitignored; `.env.example` shows the shape):
+## Deploy (home-lab Linux host, LAN-only by design)
 
-- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `PGHOST`, `PGPORT` — database
-- `GOOGLE_APPLICATION_CREDENTIALS` — Service Account key for Drive mode (optional for local mode; defaults to the key at repo root)
-- `DASHBOARD_DB_PASSWORD` — read-only analytics login (Grafana); the pipeline provisions the `dashboard` role idempotently on every sync when set
-- `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` — Grafana's own login (defaults: `admin` / `change_me_grafana`)
+One `docker compose` stack; chat is LAN-bound (no port-forward, no auth in v1 — the
+home network is the boundary, and health data is why). See `docs/deploy.md` for the
+runbook (build, bring-up, provider config + privacy statement, verify, backup),
+`ops/diagnosis.md` for the health probes, and `.github/workflows/deploy.yml` for the
+SSH deployment template (requires secrets).
 
-## Google Drive mode
+## Repository map
 
-The pipeline authenticates as the project's Service Account with a `drive.readonly`-scoped token and treats each file it finds as a takeout archive (same engine as local mode, md5-based change detection).
+```
+README.md  product-spec.md  AGENTS.md          rubric entry points
+openapi.yaml                                   the API contract (served at /openapi.yaml)
+backend/            Python pipeline + assistant (+ src layout, see backend/README.md)
+frontend/           the single-page UI (see frontend/README.md)
+health-assistant-core/   generic chatbot core (own history, subtree)
+agent-capabilities/ run_health_query capability + registration
+agent-hooks/        enforced SQL-surface guardrail
+custom-agent/       the health specialist agent profile
+mcp-server/         stdio MCP server (ask_health, semantic_layer_surface)
+security/           audit.md (real scans), policy.md (AI tool/data policy)
+ops/                diagnosis.md (operational probes + outputs)
+docs/               deploy, ai-workflow, permissions, agent-extension-pack, adr/
+.github/workflows/  ci.yml (merge gates), deploy.yml (SSH deploy template)
+deploy/  grafana/   timers/backups, dashboards
+```
 
-Two external preconditions, done once by an operator:
+## How AI tools were used
 
-1. Enable the **Drive API** on the project the Service Account belongs to.
-2. Share the Drive folder containing takeout zips with the Service Account's email.
-
-Until those are in place, local mode exercises the identical code path.
-
-## How a run works
-
-- **Catalog**: the source (Drive or local dir) lists takeout zips with id, name, modified time, md5.
-- **Diff**: `pipeline.processed_files` records every file (ADR-0003); new, changed (md5), or previously-failed files are processed; unchanged files are skipped; source deletions are ignored.
-- **Bronze** (ADR-0002): each takeout folder becomes one table (all TEXT + `_takeout`/`_source_file`/`_loaded_at`), monthly files merge, schema drift widens the table.
-- **Silver** (ADR-0005): 9 curated families — entities (`sleep_score`, `active_zone_minutes`, `device`, `profile`, `stress`, `spo2`) upsert by natural key; high-frequency families without a defensible key (`hrv`, `temperature`, `activity`) append idempotently (delete-then-insert per source file). Unparseable rows go to `silver.rejected_rows` with a reason, as warnings — not failures; rows deliberately left unmapped (temperature per-sample rows) stay bronze-only.
-- **Gold**: read-only views (`gold.daily_health`, `gold.sleep_summary`, `gold.activity_trends`, `gold.freshness`) are the read contract; Grafana queries them as the `dashboard` role (SELECT-only on silver+gold).
-- **Run summary**: processed/skipped/failed counts, per-family bronze rows, rejection count. Exit 0 on success; non-zero only on real errors.
-
-## Repository layout
-
-- `src/pipeline/` — `cli.py` (entrypoint), `sources.py` (local adapter + catalog contract), `drive.py` (Drive adapter), `state.py` (ledger + diff), `ingest.py` (bronze), `silver.py` (silver build), `db.py` (DDL + connection + gold views + dashboard role), `runner.py` (per-takeout orchestration), `config.py` (env)
-- `Dockerfile` + `requirements.txt` — containerized sync runner (Linux deployment; see below)
-- `deploy/` — systemd units (`health-sync.*`, `health-backup.*`) and `backup.sh` (nightly pg_dump)
-- `tests/` — E2E suite at the CLI seam (tickets 01/02/04/05/06, 0a Tier 1, 0b gold + role), isolated to a throwaway database
-- `grafana/` — provisioned datasource, dashboard (`health.json`), stale-sync alert
-- `docs/SPEC.md`, `docs/dashboard.md` (Grafana runbook), `docs/deploy.md` (Linux deployment), `docs/adr/0001–0005`, `CONTEXT.md` (glossary), `ROADMAP.md` (home-lab roadmap: autonomous ingestion, K3S, chatbot)
-- `.scratch/takeout-pipeline/issues/` — implementation tickets (gitignored)
+Spec → tickets → TDD at pre-agreed seams → regular typecheck/tests → two-axis review →
+eval gate. Full record: `docs/ai-workflow.md`; security artifacts: `security/audit.md`
+(gitleaks/pip-audit/bandit with real outputs); extension pack: `docs/agent-extension-pack.md`.

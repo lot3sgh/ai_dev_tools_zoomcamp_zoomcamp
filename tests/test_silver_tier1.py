@@ -8,6 +8,10 @@ operational contract from ADR-0003).
 from __future__ import annotations
 
 from tests.conftest import HRV_CSV, SPO2_CSV, STRESS_CSV, make_zip
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _sync(source_dir):

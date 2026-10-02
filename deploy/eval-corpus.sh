@@ -25,5 +25,5 @@ if [[ -z "${LLM_API_KEY:-}" ]]; then
   exit 0
 fi
 
-echo "eval-corpus: running the golden corpus ($(grep -c 'CorpusPair(' src/assistant/corpus.py) pairs) — provider gate"
+echo "eval-corpus: running the golden corpus ($(grep -c 'CorpusPair(' backend/src/assistant/corpus.py) pairs) — provider gate"
 uv run pipeline eval

@@ -309,7 +309,9 @@ def build_family(
 
     with conn.cursor() as cur:
         cur.execute(
-            f"DELETE FROM silver.{table} WHERE _source_file = %s", (source_file,)
+            sql.SQL("DELETE FROM silver.{} WHERE _source_file = %s").format(
+                sql.Identifier(table)),
+            (source_file,),
         )  # scoped cleanup so re-runs don't leave stale rows
         cur.execute(
             sql.SQL("SELECT {} FROM bronze.{} WHERE _source_file = %s").format(

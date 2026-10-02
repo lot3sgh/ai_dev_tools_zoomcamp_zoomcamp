@@ -46,8 +46,12 @@ uninstall-timers:  ## Remove the systemd timers from the Linux host
 	systemctl daemon-reload
 	@echo "timers removed"
 
-test:        ## Run the E2E test suite (synthetic fixture + throwaway Postgres)
+test:        ## Run the E2E suite (integration, throwaway Postgres) + frontend tests
 	uv run pytest -q
+	cd frontend && node --test tests/*.test.mjs
+
+test-unit:   ## Unit-only backend run (no database): -m "not integration"
+	uv run pytest -m "not integration" -q
 
 typecheck:   ## Run mypy over the pipeline package
 	uv run mypy

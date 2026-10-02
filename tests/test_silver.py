@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from tests.conftest import DEVICES_CSV, make_zip
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _sync(source_dir):

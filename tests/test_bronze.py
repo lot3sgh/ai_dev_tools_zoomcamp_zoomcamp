@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from tests.conftest import AZM_AUG, AZM_SEPT, make_zip
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _sync(source_dir):

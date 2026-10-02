@@ -7,6 +7,10 @@ import os
 import psycopg
 
 from tests.conftest import make_zip
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _sync(source_dir):

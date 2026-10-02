@@ -22,7 +22,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/src:/app/core_src \
+    PYTHONPATH=/app/src:/app/core_src:/app/agent_hooks \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
@@ -32,12 +32,21 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 2. This repository's application code (health side: service, tool, registry wiring).
-COPY src ./src
+COPY backend/src ./src
 
-# 3. The generic core (health-assistant-core/src) — baked in from the additional context.
+# 3. The single-page frontend (no build step; served by the app at /).
+COPY frontend ./frontend
+
+# 4. The generic core (health-assistant-core/src) — baked in from the additional context.
 COPY --from=core src ./core_src
 
-# 4. Run as an unprivileged user (no write access needed; the Chat Log is the DB's job).
+# 5. The agent guards (agent-hooks package; the tool-layer SQL surface guard).
+COPY agent-hooks ./agent_hooks
+
+# 6. The API contract (served by the app at /openapi.yaml).
+COPY openapi.yaml ./openapi.yaml
+
+# 7. Run as an unprivileged user (no write access needed; the Chat Log is the DB's job).
 RUN useradd --create-home --uid 10002 pipeline \
     && chown -R pipeline:pipeline /app
 USER pipeline

@@ -1,0 +1,96 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# The deterministic gates are the merge gate: backend suite + typecheck, the frontend
+# tests, and the eval-corpus self-check (stub path, no key). The *provider* gate
+# (real LLM, 90%/100% thresholds) runs as a separate job that only activates when
+# LLM_API_KEY is configured as a repository secret — clean skip otherwise.
+jobs:
+  backend:
+    name: backend (pytest + mypy)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: health_pipeline
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Typecheck
+        run: uv run python -m mypy
+      - name: Backend test suite
+        run: uv run pytest -q
+      - name: Eval-corpus self-check (deterministic, no key)
+        run: uv run pipeline eval --self-check
+
+  frontend:
+    name: frontend (node --test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: Frontend tests (SSE parser + API client)
+        working-directory: frontend
+        run: node --test tests/*.test.mjs
+
+  provider-gate:
+    name: eval gate (real provider, merge blocker when key present)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: health_pipeline
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      CHATBOT_DB_PASSWORD: ${{ secrets.CHATBOT_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Provider corpus gate
+        run: bash deploy/eval-corpus.sh

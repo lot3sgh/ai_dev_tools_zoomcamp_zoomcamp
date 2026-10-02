@@ -8,6 +8,10 @@ Expected values are derived from the fixture CSVs by hand (independent source of
 from __future__ import annotations
 
 from decimal import Decimal
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _sync(source_dir):

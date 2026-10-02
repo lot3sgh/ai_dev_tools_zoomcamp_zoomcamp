@@ -9,7 +9,21 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+def _repo_root() -> Path:
+    """The repository root: the nearest ancestor holding pyproject.toml.
+
+    The source lives under backend/src/ in dev and is copied to /app/src in the
+    container (no pyproject there), so the fallback is the working directory — which
+    the Docker images set to /app, where .env and frontend/ are mounted.
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    return Path.cwd()
+
+
+REPO_ROOT = _repo_root()
 DEFAULT_SA_KEY = REPO_ROOT / "wise-weaver-509208-b9-54cec59c6c1d.json"
 
 

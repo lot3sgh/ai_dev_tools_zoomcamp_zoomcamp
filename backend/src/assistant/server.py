@@ -19,16 +19,18 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from assistant_core import Outcome, Provider, Registry
 
 from assistant import corpus, engine, providers
 from assistant.providers import ProviderConfigError
-from pipeline import db
+from pipeline import config, db
 
 MAX_TURNS = 12                 # bounded conversation context per in-memory session
-UI_PATH = Path(__file__).resolve().parent / "web" / "ui.html"
+FRONTEND_DIR = config.REPO_ROOT / "frontend"   # single-page UI (no build step)
+OPENAPI_PATH = config.REPO_ROOT / "openapi.yaml"
 
 
 def _sse(event: str, payload: dict) -> str:
@@ -66,9 +68,9 @@ def create_app(provider: Provider | None = None, *, registry: Registry | None = 
     app.state.few_shots = corpus.few_shots()
     app.state.sessions = {}  # session_id -> bounded list of user/assistant turns
 
-    @app.get("/")
-    def home() -> FileResponse:
-        return FileResponse(UI_PATH, media_type="text/html")
+    @app.get("/openapi.yaml", include_in_schema=False)
+    def contract() -> FileResponse:
+        return FileResponse(OPENAPI_PATH, media_type="application/yaml")
 
     @app.post("/api/chat")
     def chat(req: ChatRequest) -> StreamingResponse:
@@ -140,5 +142,8 @@ def create_app(provider: Provider | None = None, *, registry: Registry | None = 
             raise HTTPException(status_code=404,
                                 detail="chat log row not found or already rated")
         return {"ok": True}
+
+    # The single-page UI and its local assets, served last so /api/* wins.
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
     return app

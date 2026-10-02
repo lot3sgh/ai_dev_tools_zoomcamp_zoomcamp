@@ -113,7 +113,9 @@ def _load_family(
     cols = _column_names(header) + list(PROVENANCE)
     with conn.cursor() as cur:
         cur.execute(
-            f"DELETE FROM bronze.{family} WHERE _source_file = %s", (source_file,)
+            sql.SQL("DELETE FROM bronze.{} WHERE _source_file = %s").format(
+                sql.Identifier(family)),
+            (source_file,),
         )  # delete-then-insert per source file
         with cur.copy(
             sql.SQL("COPY bronze.{} ({}) FROM STDIN WITH (FORMAT csv)").format(

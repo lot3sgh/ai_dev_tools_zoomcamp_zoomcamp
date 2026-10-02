@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from pipeline import db
+import pytest
+
+pytestmark = pytest.mark.integration  # needs the throwaway Postgres DB
+
 
 
 def _schemas(conn) -> set[str]:

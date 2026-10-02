@@ -2,7 +2,8 @@
 #
 # Dependencies come from the pinned, hashed requirements.txt (generated with
 # `uv export --no-dev --format requirements-txt --no-emit-package`). The package itself runs
-# straight from /app/src via PYTHONPATH, so the image needs no build backend.
+# straight from /app/src via PYTHONPATH, so the image needs no build backend. The backend
+# source lives under backend/src in the repo and is copied to /app/src here.
 #
 # Runtime inputs (not baked in): .env and the Service Account key, mounted by docker compose
 # (see the `sync` service in docker-compose.yml). Entry point matches the README's
@@ -21,8 +22,8 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 2. Application source.
-COPY src ./src
+# 2. Application source (the backend packages; see backend/ in the repo).
+COPY backend/src ./src
 
 # 3. Run as an unprivileged user (no write access needed; /app/.env is read-only).
 RUN useradd --create-home --uid 10001 pipeline \

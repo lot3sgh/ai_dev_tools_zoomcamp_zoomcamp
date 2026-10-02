@@ -1,0 +1,10 @@
+{
+  "name": "health-assistant-frontend",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Single-page chat UI for the Health Assistant. No build step, no framework — plain ES modules served by the FastAPI backend.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
