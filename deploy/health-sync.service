@@ -1,0 +1,12 @@
+[Unit]
+Description=Google Health Takeout sync (Drive -> bronze/silver/gold)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+# Override REPO_DIR (and off-box config) in /etc/health-pipeline.env
+EnvironmentFile=-/etc/health-pipeline.env
+ExecStart=/bin/sh -c 'cd "${REPO_DIR:-/opt/health-pipeline}" && docker compose --profile sync run --rm sync'
+Nice=10
+TimeoutStartSec=3600

@@ -25,9 +25,13 @@ A Postgres table in the `bronze` schema holding a family's rows verbatim — eve
 _Avoid_: Landing table, staging table, raw table
 
 **Silver Table**:
-A typed, keyed Postgres table in the `silver` schema derived from bronze tables for a domain entity (sleep, active zone minutes, device, profile). Upserts by natural key; rows that fail type conversion go to `silver.rejected_rows` with the reason instead of failing the run.
+A typed Postgres table in the `silver` schema derived from a curated bronze family — 9 families today (sleep, active zone minutes, device, profile, stress, hrv, spo2, temperature, activity). Entity tables (sleep, AZM, device, profile, stress, spo2) upsert by natural key; high-frequency tables without a defensible key (hrv, temperature, activity) are in append mode, with rerun idempotency from delete-then-insert per source file. Rows that fail type conversion go to `silver.rejected_rows` with the reason instead of failing the run; rows deliberately left unmapped (`_Skip`, e.g. temperature per-sample rows) stay bronze-only.
 _Avoid_: Curated table, gold table, model table
 
 **Gold Table**:
-A future aggregation/reporting table (daily metric totals, trends). Deliberately not built yet; the name exists so the deferred layer is explicit as `gold`.
+The read contract layer (Phase 0b): four SQL views in the `gold` schema — `daily_health`, `sleep_summary`, `activity_trends`, `freshness` — served to Grafana (and any future consumer) through the read-only `dashboard` role. Deliberately views, not materialized tables: no mart tooling (no dbt; ADR-0004 reasoning). Night metrics key to the date of the night they belong to.
 _Avoid_: Report, dashboard table
+
+**Semantic Layer**:
+The curated SQL surface exposed to conversational consumers (the chatbot; Grafana reads the same contract). Four gold views + a whitelist of small, stable-grain silver tables (`sleep_score`, `device`, `profile`); `freshness` is in scope but operational. Bronze and the high-volume silver families are never part of the layer — an LLM writing direct SQL must not be able to reach them.
+_Avoid_: Dataset, views, query surface

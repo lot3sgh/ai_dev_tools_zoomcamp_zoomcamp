@@ -24,5 +24,8 @@ data/
 # Scratch artifacts (tickets)
 .scratch/
 
+# Nightly pg_dump backups (deploy/backup.sh)
+backups/
+
 # Review/explainer artifacts (lavish)
 .lavish/

@@ -1,0 +1,27 @@
+# Build context: only requirements.txt and src/ are needed by the Dockerfile.
+.git
+.gitignore
+.venv
+__pycache__/
+*.py[oc]
+.mypy_cache/
+.pytest_cache/
+data/
+tests/
+docs/
+grafana/
+deploy/
+.lavish/
+.scratch/
+.env
+.env.example
+*.zip
+docker-compose.yml
+Dockerfile
+Makefile
+pyproject.toml
+uv.lock
+README.md
+CONTEXT.md
+ROADMAP.md
+wise-weaver-*.json

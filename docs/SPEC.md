@@ -1,8 +1,10 @@
 # Spec: Google Health Takeout → Postgres Pipeline
 
-Status: ready-for-agent
-ADRs in force: [0001-drive-takeout-via-service-account](./adr/0001-drive-takeout-via-service-account.md), [0002-bronze-as-text-landing](./adr/0002-bronze-as-text-landing.md), [0003-pipeline-state-in-postgres](./adr/0003-pipeline-state-in-postgres.md)
+Status: implemented (Phases 0a/0b landed — 9 silver families, live gold views, Grafana; ROADMAP tracks the rest)
+ADRs in force: [0001-drive-takeout-via-service-account](./adr/0001-drive-takeout-via-service-account.md), [0002-bronze-as-text-landing](./adr/0002-bronze-as-text-landing.md), [0003-pipeline-state-in-postgres](./adr/0003-pipeline-state-in-postgres.md), [0004-dlt-not-adopted](./adr/0004-dlt-not-adopted.md), [0005-gold-views-and-promotion-rule](./adr/0005-gold-views-and-promotion-rule.md)
 Glossary: [CONTEXT.md](../../CONTEXT.md)
+
+> Superseded by roadmap work: the "Out of Scope" gold note and user story 32 (gold "explicitly absent") predate ROADMAP Phase 0b, which shipped the `gold` layer as read-only SQL views.
 
 ## Problem Statement
 
@@ -10,7 +12,7 @@ The user's Google Health (Fitbit) data is trapped in Google Takeout exports — 
 
 ## Solution
 
-A Python CLI pipeline that: authenticates to Google Drive as the project's Service Account (or reads a local directory of takeout zips — same engine), detects new or changed takeouts by md5, streams each takeout's CSVs into Postgres **bronze** tables (verbatim, TEXT, family-per-table, with provenance), and derives **silver** tables (typed, keyed) for the prime domains: sleep score, active zone minutes, device, profile. Rows that fail type conversion go to an audit rejection table rather than failing the run. The pipeline runs against a dockerized Postgres 16 on host port 5433, tracks every processed file in a state ledger, and is idempotent and re-runnable. Gold (aggregation) is explicitly deferred.
+A Python CLI pipeline that: authenticates to Google Drive as the project's Service Account (or reads a local directory of takeout zips — same engine), detects new or changed takeouts by md5, streams each takeout's CSVs into Postgres **bronze** tables (verbatim, TEXT, family-per-table, with provenance), derives **silver** tables (typed, keyed) for 9 curated families — sleep score, active zone minutes, device, profile, stress, hrv, spo2, temperature, activity (Phase 0a) — and publishes **gold** views (daily health, sleep summary, weekly trends, freshness; Phase 0b) that a Grafana dashboard reads through a read-only `dashboard` role. Rows that fail type conversion go to an audit rejection table rather than failing the run. The pipeline runs against a dockerized Postgres 16 on host port 5433 (Grafana beside it on host port 3000), tracks every processed file in a state ledger, and is idempotent and re-runnable. Materialized gold aggregation tables are explicitly deferred; the gold *views* are live.
 
 ## User Stories
 
@@ -45,7 +47,7 @@ A Python CLI pipeline that: authenticates to Google Drive as the project's Servi
 29. As the developer, I want an end-to-end test that runs the CLI against a small synthetic takeout fixture and a throwaway Postgres, so that the whole engine is verified through one seam.
 30. As the developer, I want a fixture that includes a deliberately bad row, so that the rejection-table behavior is tested.
 31. As the developer, I want a re-run in the tests, so that idempotency and md5 no-op behavior are verified.
-32. As the data owner, I want the gold (aggregation) layer explicitly absent, so that scope is clear and future work has a named destination.
+32. As the data owner, I want the gold (aggregation) layer explicitly absent, so that scope is clear and future work has a named destination. *(Superseded: ROADMAP Phase 0b shipped gold as read-only SQL views; materialized aggregation tables remain out of scope.)*
 
 ## Implementation Decisions
 
@@ -53,31 +55,31 @@ A Python CLI pipeline that: authenticates to Google Drive as the project's Servi
 - **Source contract**: both adapters emit the same per-file catalog — file id, name, modified time, md5, size — so the engine is identical for drive and local modes (ADR-0001).
 - **Sync rule**: a file is processed when its id is unknown to the ledger or its md5 differs from the last processed run; failed files (status = error) are re-picked-up; deletions from the source are ignored (ADR-0003). State lives in `pipeline.processed_files` (file id, name, modified time, md5, status, row count, error message, processed at).
 - **Bronze**: one table per family (takeout subfolder), every CSV value as TEXT, plus `_takeout`, `_source_file`, `_loaded_at`. Monthly files of a family merge; inward schema drift widens the table with nullable columns; egregiously incompatible siblings are coerced into the same family table and remain traceable by `_source_file` (ADR-0002). Loading is delete-then-insert scoped to the source file for idempotent re-runs.
-- **Silver**: typed, keyed tables for the four prime domains — sleep score (natural key `sleep_log_entry_id`), active zone minutes (`date_time` + `heart_zone_id`), device (`wire_id`), profile (`id`). All timestamps are `timestamptz` (UTC); empty CSV cells become NULL; upsert on natural key. Rows that cannot be typed (bad date, non-numeric) go to `silver.rejected_rows` (reason + `_source_file`) and are reported as warnings, not failures.
-- **Schema**: three schemas — `bronze`, `silver`, `pipeline` (state). DDL is idempotent and owned by the pipeline; no migration tool until silver stabilizes.
+- **Silver**: typed tables for the 9 curated families (Phase 0a) — sleep score (`sleep_log_entry_id`), active zone minutes (`date_time` + `heart_zone_id`), device (`wire_id`), profile (`id`), stress (`date`), spo2 (`timestamp`), plus append-mode hrv / temperature / activity (no defensible natural key; delete-then-insert per source file for idempotency — ADR-0005). All timestamps are `timestamptz` (UTC); empty CSV cells become NULL; entity tables upsert on natural key. Rows that cannot be typed (bad date, non-numeric) go to `silver.rejected_rows` (reason + `_source_file`) and are reported as warnings, not failures; rows deliberately not mapped (`_Skip`, e.g. temperature per-sample rows) stay bronze-only.
+- **Schema**: four schemas — `bronze`, `silver`, `pipeline` (state), `gold` (views, Phase 0b). DDL is idempotent and owned by the pipeline; no migration tool until silver stabilizes.
 - **Runtime & tooling**: Python ≥3.12 (was pinned to unavailable 3.14), uv-managed environment; dependencies are the Google API client libraries (auth + Drive), the Postgres driver, and dev extras for testing.
-- **Deployment**: docker compose with Postgres 16, host port 5433 (5432 is occupied in this environment), named volume, healthcheck; credentials from a gitignored environment file; Service Account key path from an environment variable, defaulting to the repo root for development.
+- **Deployment**: docker compose with Postgres 16, host port 5433 (5432 is occupied in this environment), named volume, healthcheck; credentials from a gitignored environment file; Service Account key path from an environment variable, defaulting to the repo root for development. Phase 0b adds a Grafana service on host port 3000 with provisioned datasource/dashboard/stale-sync alert, connecting as the read-only `dashboard` role the pipeline provisions on every sync (SELECT on silver+gold only).
 - **CLI contract**: sync command with source mode (drive | local), optional path for local mode, optional limit for dev; clean summary output per run; exit code zero on success, non-zero on errors, success-with-warnings when only rows were rejected.
 
 ## Testing Decisions
 
 - **Good test**: exercises external behavior only — run the pipeline, inspect the resulting database. No mocking of the sync engine's internals; no implementation assertions.
 - **One seam**: the CLI end-to-end (ADR/spec-aligned). Tests run the sync command against a synthetic takeout fixture and a throwaway Postgres instance (docker), then assert on bronze rows, silver rows, rejection rows, and the state ledger.
-- **Fixture**: a small synthetic takeout zip covering at least the sleep, active zone minutes, device, and profile families; includes one deliberately unparseable row (rejection path) and is sized for fast runs. The real 1.4 GB sample archive is not a test input.
-- **Covered behaviors**: first run loads everything; re-run is a no-op (md5 unchanged); modified fixture content is re-ingested; rejected rows land with reasons; state ledger contains per-file status and row counts; bronze provenance columns are populated.
+- **Fixture**: a small synthetic takeout zip covering all 9 curated families (sleep, active zone minutes, device, profile, stress, hrv, spo2, temperature, activity) plus bronze-only families; includes deliberately unparseable rows (rejection paths), duplicate pairs (append-mode survival), and per-sample temperature rows (skip path). The real 1.4 GB sample archive is not a test input.
+- **Covered behaviors**: first run loads everything; re-run is a no-op (md5 unchanged); modified fixture content is re-ingested; rejected rows land with reasons; append-mode families keep legitimate duplicates across reruns; state ledger contains per-file status and row counts; bronze provenance columns are populated.
 - **Prior art**: none — greenfield repository; this establishes the pattern. Pure helpers (family inference, diff rule) are exercised through the CLI seam via fixtures rather than separate unit seams.
 
 ## Out of Scope
 
-- Gold/aggregation tables (daily totals, trends) — deferred, named as the future `gold` layer.
+- Materialized gold/aggregation tables (daily totals, trends) — deferred; Phase 0b shipped the `gold` layer as read-only SQL views instead (see ROADMAP).
 - Scheduling/orchestration (cron, Airflow) — the pipeline is an on-demand CLI; triggering is the operator's.
-- Analytics connections (BI tools, notebooks, dashboards).
+- Analytics connections beyond Grafana (BI tools, notebooks, mobile apps) — Grafana is the current consumer (Phase 0b); further consumers are additive, not pipeline work.
 - Google Drive folder setup — enabling Drive API and sharing the folder with the Service Account is an operator action outside the pipeline.
 - Migration tooling — until silver stabilizes.
 - Data quality backfills or historical corrections.
 
 ## Further Notes
 
-- Drive access is not yet verified end-to-end: the Service Account needs the target folder shared with it and the Drive API enabled; the pipeline requests its own `drive.readonly` token (default gcloud tokens lack Drive scope). Local mode is the fully testable path and is the primary development seam.
+- Drive access has been exercised end-to-end during development (takeouts pulled as the Service Account, md5 change detection verified). The two operator preconditions remain: the Drive API enabled on the SA's project, and the folder shared with the SA's email. Local mode is the fully testable path and is the primary development seam.
 - The sample takeout archive is a dev fixture only, gitignored; it is not the source of truth for tests.
 - Repo docs produced during design: CONTEXT.md glossary (Takeout, Service Account, Drive File, Family, Bronze Table, Silver Table, Gold Table) and three ADRs covering source architecture, TEXT bronze landing, and Postgres state.

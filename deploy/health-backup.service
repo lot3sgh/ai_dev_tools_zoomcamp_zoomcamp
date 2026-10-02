@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly pg_dump backup for the Health Takeout pipeline
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+# Override REPO_DIR and off-box targets in /etc/health-pipeline.env
+EnvironmentFile=-/etc/health-pipeline.env
+ExecStart=/bin/sh -c 'cd "${REPO_DIR:-/opt/health-pipeline}" && ./deploy/backup.sh'
+Nice=10
+TimeoutStartSec=1800

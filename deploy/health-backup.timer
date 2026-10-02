@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly database backup (pg_dump -> gzip -> off-box)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

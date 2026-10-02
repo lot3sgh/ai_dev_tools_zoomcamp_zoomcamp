@@ -37,6 +37,35 @@ services:
       db:
         condition: service_healthy
 
+  # The scheduled sync runner (Phase 1). Runs only on demand or via a timer:
+  #   docker compose --profile sync run --rm sync [extra CLI args]
+  # It joins the compose network (DB = `db:5432`), reads .env from the mounted repo .env,
+  # and authenticates to Drive with the repo's Service Account key mapped to /secrets/sa-key.json.
+  # `profiles: ["sync"]` keeps it out of `docker compose up -d`.
+  sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: health-pipeline-sync:latest
+    profiles: ["sync"]
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa-key.json
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:-}
+    volumes:
+      - ./.env:/app/.env:ro
+      # Bind the repo's SA key; the container path is always /secrets/sa-key.json.
+      # If your key file has a different name, update this bind source (one line).
+      - ./wise-weaver-509208-b9-577f86640845.json:/secrets/sa-key.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   health_pipeline_pgdata:
   grafana_data:

@@ -17,12 +17,14 @@ already idempotent and ledger-driven (ADR-0003).
 
 ## Phase 0a — Silver expansion (Tier 1)
 
+> ✅ Complete (2026-10-01): nine silver tables live (`95c13da`…`8766328`), gold views built on them, rejection counts visible via `gold.freshness`.
+
 Prerequisite to the gold views: the SPEC's four prime tables were the minimal set, and the
 dashboard/report contract needs these five typed, keyed tables. Mappings verified against
 live bronze schemas (probe 2026-10-01): intraday heart rate lives inside
 `physical_activity_googledata` (`beats_per_minute`); the `heart_rate` family is empty.
 
-- [ ] Add silver tables + row mappers (pattern: `silver.py` `_sleep`/`_azm` mappers):
+- [x] Add silver tables + row mappers (pattern: `silver.py` `_sleep`/`_azm` mappers) — all five shipped (`95c13da`, `d1fef31`, `ae06c38`, `4a3d908`, `8766328`):
   - `silver.stress` ← `stress_score` — key `date`; carries sleep/responsiveness/exertion
     points + status
   - `silver.hrv` ← `heart_rate_variability` — key: night/date; rmssd, LF/HF, coverage
@@ -34,11 +36,14 @@ live bronze schemas (probe 2026-10-01): intraday heart rate lives inside
     (intraday, 9.9M rows, no clean natural key): composite-key upsert
     `(timestamp, data_source)` vs typed-append with delete-by-`_source_file` (bronze-level
     idempotency already exists); consider monthly partitioning if Grafana queries lag
-- [ ] Watch `silver.rejected_rows` per new family — new rejection classes are expected and
-      are the designed warning channel
-- [ ] ADR note on the promotion rule: promote when reports ask for typed/keyed values AND
+- [x] Watch `silver.rejected_rows` per new family — new rejection classes are expected and
+      are the designed warning channel — done; live audit shows 3 classes (58,882
+      `not an integer` in activity, 244 `not a date` in stress, 4 `missing wire_id` in
+      paired_devices) surfaced via `gold.freshness` and the CLI run summary
+- [x] ADR note on the promotion rule: promote when reports ask for typed/keyed values AND
       the family has a defensible key and clean time grain; everything else stays
-      bronze-only (queryable via views) — same reasoning as ADR-0004
+      bronze-only (queryable via views) — same reasoning as ADR-0004 — shipped as
+      `docs/adr/0005-gold-views-and-promotion-rule.md`
 
 **Done when:** gold views can be built against typed silver tables for stress, HRV, SpO2,
 temperature and intraday activity — with rejection counts visible in `gold.freshness`.
@@ -47,29 +52,47 @@ temperature and intraday activity — with rejection counts visible in `gold.fre
 
 ## Phase 0b — Dashboard first (zero new tooling)
 
+> ✅ Complete (2026-10-01): gold views (gold.daily_health / sleep_summary / activity_trends / freshness, `376492c`), Grafana datasource + 4-panel dashboard + stale-sync alert (`eca6182`, `9670913`); dashboard answers the "how was my sleep this month?" question.
+
 Assumption: **Grafana** with the built-in Postgres datasource (Metabase/Superset work the
 same). This is the earliest visible payoff.
 
-- [ ] Define gold views (the contract every consumer reads):
+- [x] Define gold views (the contract every consumer reads) — all four shipped (`376492c`):
   - `gold.daily_health` — per-day sleep score, HRV, resting HR, AZM, stress
   - `gold.sleep_summary` — nightly aggregates + rolling averages
   - `gold.activity_trends` — weekly AZM / activity totals
   - `gold.freshness` — last sync per source (`pipeline.processed_files`), `rejected_rows` count
-- [ ] Grafana: Postgres datasource pointing at the pipeline DB (read-only role)
-- [ ] Panels: sleep score 30-day, HRV trend, stress vs. activity; one "pipeline health" panel
-      (freshness + rejections) — alert when stale or rejections spike
-- [ ] Gold views get a short ADR note (the views ARE the mart; no dbt, see Guardrails)
+- [x] Grafana: Postgres datasource pointing at the pipeline DB (read-only role) — wired
+      (`eca6182`; `grafana/provisioning/datasources/datasources.yml`, `dashboard` role from `04337aa`)
+- [x] Panels: sleep score 30-day, HRV trend, stress vs. activity; one "pipeline health" panel
+      (freshness + rejections) — alert when stale or rejections spike — 4 panels live in
+      `grafana/dashboards/health.json` (Sleep 30d, Weekly steps, HRV, Pipeline freshness;
+      render fixed in `9670913`); stale-sync alert wired, but the **rejections-spike alert is
+      still pending**
+- [x] Gold views get a short ADR note (the views ARE the mart; no dbt, see Guardrails) — shipped
+      as `docs/adr/0005-gold-views-and-promotion-rule.md`; the runbook is `docs/dashboard.md`
 
 **Done when:** a Grafana dashboard answers "what was my sleep like this month?" with no
 new runtime installed beyond Grafana itself.
 
 ## Phase 1 — Autonomous ingestion
 
-- [ ] `Dockerfile` for the CLI (slim python, `pipeline sync --source drive` as entrypoint)
+> ⚠ Target: the Linux deployment host (`docs/deploy.md`). Nothing is installed on the development Mac by design.
+
+- [x] `Dockerfile` for the CLI (slim python, `pipeline sync --source drive` as entrypoint) — shipped with
+      pinned hashed deps (`requirements.txt` from `uv export`) and a compose `sync` service
+      (`profiles: ["sync"]`); image builds and the containerized run path are smoke-tested locally
 - [ ] Scheduling: K3S `CronJob` (daily) **or** systemd timer over the existing compose
-      stack — pick the simpler one first; single user, daily is plenty
-- [ ] Nightly `pg_dump` backup, shipped off-box (personal health data is non-negotiable)
-- [ ] Freshness alert wired up once `gold.freshness` exists
+      stack — pick the simpler one first; single user, daily is plenty — systemd timers chosen and
+      written (`deploy/health-sync.{service,timer}`, daily 06:15; `deploy/health-backup.*`, 03:10;
+      `make install-timers` on the host). Not yet runtime-verified on the Linux box; K3S CronJob
+      only arrives at Phase 2 placement
+- [ ] Nightly `pg_dump` backup, shipped off-box (personal health data is non-negotiable) —
+      `deploy/backup.sh` written (dump → gzip → retention → optional rclone/rsync off-box); pick an
+      off-box target before first deploy
+- [x] Freshness alert wired up once `gold.freshness` exists — `grafana/provisioning/alerting/stale-sync.yaml`
+      (fired when `MAX(processed_at)` is older than 5 days; note: with an empty ledger the
+      alert currently sees NoData — a scheduled sync heals the ledger)
 
 **Done when:** a new takeout dropped into the Drive folder is ingested without any manual
 step, and the DB is restorable from backup.

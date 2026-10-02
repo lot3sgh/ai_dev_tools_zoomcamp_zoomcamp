@@ -37,3 +37,9 @@ It connects as the read-only `dashboard` role (provisioned by every sync run whe
   be run per table (or default privileges set by the pipeline superuser) — the
   provisioning in the pipeline offers the schema-level grant only for tables that
   exist at provisioning time.
+- **Known caveat (observed 2026-10-01):** the stale-sync alert reads `MAX(processed_at)` from
+  `gold.freshness`, so it keys off the ledger. If `pipeline.processed_files` is empty (e.g.
+  the `pipeline` schema was dropped/recreated without a fresh sync), `gold.freshness` returns
+  no rows and the alert sits in NoData instead of firing — heal by re-running a sync.
+- The provisioned alert covers staleness (5 days) only; a rejections-spike alert is a
+  pending item (ROADMAP Phase 0b, Panels box).
