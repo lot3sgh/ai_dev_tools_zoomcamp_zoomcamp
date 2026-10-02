@@ -254,6 +254,48 @@ SELECT p.name AS takeout,
 FROM pipeline.processed_files p
 LEFT JOIN (SELECT takeout, count(*) AS rejected FROM silver.rejected_rows GROUP BY 1) r
        ON r.takeout = p.name;
+
+-- Chat Log (Phase 3): the assistant's audit trail — provider, question, generated SQL,
+-- outcome, thumbs. Append-only for the assistant; feeds the eval corpus and refusal analysis.
+CREATE TABLE IF NOT EXISTS pipeline.chat_log (
+    id          BIGSERIAL PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    provider    TEXT NOT NULL,
+    question    TEXT NOT NULL,
+    sql         TEXT,
+    row_count   BIGINT NOT NULL DEFAULT 0,
+    outcome     TEXT NOT NULL,          -- 'answered' | 'refused' | 'error'
+    detail      TEXT,
+    thumbs      TEXT,                   -- 'up' | 'down' | NULL
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Semantic Layer grain documentation: the model-facing contract lives HERE, versioned with
+-- the DDL, so the assistant's knowledge can never drift from the schema (Phase 3 spec).
+COMMENT ON VIEW gold.daily_health IS
+  'One row per UTC day that has any health data (day = the UTC date). sleep_score is the max '
+  'overall_score of the night that started that day; stress_score is max stress per day; '
+  'steps and azm_minutes are daily sums; avg_hrv_rmssd averages hrv.rmssd for the day; '
+  'avg_spo2 averages spo2.value (NULLs excluded); nightly_temperature is the night summary '
+  'temperature of the night starting that day.';
+COMMENT ON VIEW gold.sleep_summary IS
+  'One row per night. night = the date the sleep STARTED (a night belongs to the day it '
+  'started, not the day it ended). overall_score is the latest sleep score entry that night; '
+  'rmssd/coverage join the same night from hrv; nightly_temperature from temperature. '
+  'rolling_7d_score is the 7-row trailing average of overall_score over nights.';
+COMMENT ON VIEW gold.activity_trends IS
+  'One row per ISO week (week_start = Monday). steps and azm_minutes are weekly sums; '
+  'active_days counts distinct days with AZM data.';
+COMMENT ON VIEW gold.freshness IS
+  'Operational view, one row per processed takeout from the sync ledger: status, row_count, '
+  'processed_at, rejected_rows. Use for questions like "when did the pipeline last sync?".';
+COMMENT ON TABLE silver.sleep_score IS
+  'Per-entry sleep scores, one row per sleep_log_entry_id. Prefer gold.sleep_summary for a '
+  '"night" question and gold.daily_health for daily aggregates.';
+COMMENT ON TABLE silver.device IS
+  'Paired devices, one row per wire_id (device_type, serial_number, enabled, fw_version).';
+COMMENT ON TABLE silver.profile IS
+  'The user profile, one row keyed by id (demographics, height, weight, units, timezone).';
 """
 
 
@@ -274,6 +316,29 @@ def provision_dashboard_role(conn: psycopg.Connection, password: str) -> None:
                 "ALTER ROLE dashboard PASSWORD {pw};\n"
                 "GRANT USAGE ON SCHEMA silver, gold TO dashboard;\n"
                 "GRANT SELECT ON ALL TABLES IN SCHEMA silver, gold TO dashboard;"
+            ).format(pw=sql.Literal(password))
+        )
+
+
+def provision_chatbot_role(conn: psycopg.Connection, password: str) -> None:
+    """Idempotently create the assistant's read-only role (Semantic Layer only).
+
+    SELECT on exactly the gold views + the whitelisted silver tables; bronze and the
+    high-volume silver families are not granted, so they are unreachable by construction.
+    Password is inlined as a SQL literal (never interpreted as SQL).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            sql.SQL(
+                "DO $do$ BEGIN\n"
+                "  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chatbot') THEN\n"
+                "    CREATE ROLE chatbot LOGIN;\n"
+                "  END IF;\n"
+                "END $do$;\n"
+                "ALTER ROLE chatbot PASSWORD {pw};\n"
+                "GRANT USAGE ON SCHEMA silver, gold TO chatbot;\n"
+                "GRANT SELECT ON gold.daily_health, gold.sleep_summary, gold.activity_trends,\n"
+                "    gold.freshness, silver.sleep_score, silver.device, silver.profile TO chatbot;"
             ).format(pw=sql.Literal(password))
         )
 
@@ -300,4 +365,7 @@ def ensure_schemas() -> None:
         password = config.dashboard_password()
         if password:
             provision_dashboard_role(conn, password)
+        chatbot = config.chatbot_password()
+        if chatbot:
+            provision_chatbot_role(conn, chatbot)
         conn.commit()

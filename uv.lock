@@ -19,6 +19,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "health-assistant-core" },
     { name = "mypy" },
     { name = "pytest" },
 ]
@@ -27,6 +28,7 @@ dev = [
 requires-dist = [
     { name = "google-api-python-client", specifier = ">=2.150" },
     { name = "google-auth", specifier = ">=2.37" },
+    { name = "health-assistant-core", marker = "extra == 'dev'", directory = "../health-assistant-core" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
@@ -451,6 +453,18 @@ sdist = { url = "https://files.pythonhosted.org/packages/8a/c5/4353a188e2c335aee
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1a/7a/7d79170c6ce6f12e109df2b3879d6b934010cf4f99aea8de8b7e5408c174/googleapis_common_protos-1.75.3-py3-none-any.whl", hash = "sha256:a018d2bf098ca9fb6faa08d5bb780e2a2c2f73c566f069761331386c9596d3f2", size = 306984, upload-time = "2026-09-03T22:30:45.133Z" },
 ]
+
+[[package]]
+name = "health-assistant-core"
+version = "0.1.0"
+source = { directory = "../health-assistant-core" }
+
+[package.metadata]
+requires-dist = [
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "httplib2"

@@ -58,6 +58,11 @@ def dashboard_password() -> str | None:
     return os.environ.get("DASHBOARD_DB_PASSWORD")
 
 
+def chatbot_password() -> str | None:
+    """Password for the chatbot role (Semantic Layer, read-only); None disables provisioning."""
+    return os.environ.get("CHATBOT_DB_PASSWORD")
+
+
 def sa_key_path() -> Path | None:
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if path:

@@ -12,6 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "health-assistant-core",
     "mypy>=1.13",
     "pytest>=8.3",
 ]
@@ -24,12 +25,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pipeline"]
+packages = ["src/pipeline", "src/assistant"]
+
+[tool.uv.sources]
+# The generic core lives in its own repo (Phase 4 pod-able core); dev/test only here.
+health-assistant-core = { path = "../health-assistant-core" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/pipeline"]
+files = ["src/pipeline", "src/assistant"]
 ignore_missing_imports = true
