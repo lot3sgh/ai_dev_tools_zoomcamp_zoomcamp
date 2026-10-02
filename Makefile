@@ -1,4 +1,4 @@
-.PHONY: up down sync-local sync-drive test typecheck image sync-drive-container chat chat-up eval-gate backup install-timers uninstall-timers
+.PHONY: up down sync-local sync-drive test test-unit typecheck image sync-drive-container chat chat-up eval-gate backup install-timers uninstall-timers
 
 up:          ## Bring up the Postgres database (docker compose)
 	docker compose up -d db

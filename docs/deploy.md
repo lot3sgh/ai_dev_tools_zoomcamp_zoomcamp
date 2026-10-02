@@ -113,7 +113,7 @@ baked into the chat image at build time.
 
 | Artifact | Purpose |
 |---|---|
-| `Dockerfile.chat` | the chat service image: deps + this repo's `src` + the core's `src` (`PYTHONPATH=/app/src:/app/core_src`), uvicorn factory entry |
+| `Dockerfile.chat` | the chat service image: deps + backend `src` + core + frontend + guard (`PYTHONPATH=/app/src:/app/core_src:/app/agent_hooks`), uvicorn factory entry |
 | `docker-compose.yml` → `chat` | LAN-bound FastAPI/SSE service, DB as the read-only `chatbot` role, `.env` mounted `:ro` |
 | `deploy/eval-corpus.sh` | the eval-corpus merge gate (skips cleanly without `LLM_API_KEY`) |
 | `docs/adr/0006-…` | monorepo architecture + execute/privacy contract |

@@ -118,7 +118,7 @@ The data is structured; "how was my sleep yesterday?" is a query, not a retrieva
 > with an execute contract (10 s timeout, 500-row cap, EXPLAIN dry-run, ≤2 repairs, Chat Log);
 > provider = OpenCode Go / `opencode-go/deepseek-v4-flash` via an OpenAI-compatible env seam,
 > no silent fallback; eval-corpus gate (25 pairs; ≥90% executed-correct, 100% refusals) as the
-> merge gate — `make eval-gate`; single-file SSE web UI on the LAN (port 8000, no auth in v1);
+> merge gate — `make eval-gate`; single-page SSE web UI on the LAN (port 8000, no auth in v1);
 > generic core in this monorepo (`health-assistant-core/`; monorepo per ADR-0006 addendum). ADR-0006
 > (two-repo architecture + execute/privacy contract, consolidated to a monorepo 2026-10-02)
 > accompanies the spec. First real-provider adoption (OpenCode Go / Ollama / BMF) still needs its

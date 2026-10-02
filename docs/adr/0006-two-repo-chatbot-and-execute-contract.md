@@ -14,7 +14,7 @@ makes direct text-to-SQL safe on private health data.
   no network, no key.
 - `health-pipeline` — the health side only: the `run_health_query` tool registration over the
   Semantic Layer, the eval corpus + merge gate, the `chatbot` role provisioning, the Chat Log, the
-  FastAPI/SSE service + single-file UI, and the compose glue.
+  FastAPI/SSE service + single-page UI (frontend/), and the compose glue.
 
 > **Addendum (2026-10-02, operator decision): monorepo.** The two repositories were consolidated
 > into one: `health-assistant-core` now lives as `health-assistant-core/` inside this checkout
