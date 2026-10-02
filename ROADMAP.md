@@ -111,17 +111,35 @@ drill succeeds.
 
 The data is structured; "how was my sleep yesterday?" is a query, not a retrieval task.
 
-- [ ] Read-only DB role + view-only access for the chatbot
-- [ ] Tool-calling orchestrator: one tool `run_health_query(sql)` over gold/silver views,
-      few-shot examples in the system prompt
-- [ ] **LLM provider abstraction behind an OpenAI-compatible client** (env config):
+> 📄 Spec & tickets: `.scratch/phase-3-health-assistant/issues/` (00-spec-phase-3.md + tickets 01–05,
+> **complete** — 01 committed, 02–05 committed with the work below). Locked decisions: direct
+> text-to-SQL over the **Semantic Layer**
+> (gold views + sleep_score/device/profile; bronze unreachable by role); dedicated `chatbot` role
+> with an execute contract (10 s timeout, 500-row cap, EXPLAIN dry-run, ≤2 repairs, Chat Log);
+> provider = OpenCode Go / `opencode-go/deepseek-v4-flash` via an OpenAI-compatible env seam,
+> no silent fallback; eval-corpus gate (25 pairs; ≥90% executed-correct, 100% refusals) as the
+> merge gate — `make eval-gate`; single-file SSE web UI on the LAN (port 8000, no auth in v1);
+> generic core in its own repo (two-repo shape). ADR-0006 (two-repo + execute/privacy contract)
+> accompanies the spec. First real-provider adoption (OpenCode Go / Ollama / BMF) still needs its
+> own corpus gate run before use.
+
+- [x] Read-only DB role + view-only access for the chatbot
+- [x] Tool-calling orchestrator: one tool `run_health_query(sql)` over gold/silver views,
+      few-shot examples in the system prompt (the eval corpus doubles as the few-shot bank)
+- [x] **LLM provider abstraction behind an OpenAI-compatible client** (env config):
       Ollama (local, privacy default) ↔ hosted API (e.g. Bosch BMF) drop-in via config —
-      decide the privacy trade-off explicitly before wiring anything external
-- [ ] SSE streaming chat endpoint (FastAPI), minimal UI (web or chat client)
+      privacy trade-off decided explicitly (ADR-0006): hosted is the default, audited per
+      exchange in the Chat Log, no silent fallback
+- [x] SSE streaming chat endpoint (FastAPI), minimal UI (web or chat client)
 
 ## Phase 4 — Pod-able chatbot core
 
 Reuse across home-lab projects: the core stays generic, domain knowledge lives in tools.
+
+> Status: the core's loop, provider-adapter seam, tools registry and streaming events exist
+> (health-assistant-core, built in Phase 3 per the two-repo shape); “chat API” deliberately
+> lives on the health side (ADR-0006). Remaining Phase-4 work: a capability *discovery*
+> convention, a second registered tool, and a published container/chart in the lab registry.
 
 - [ ] Core: orchestrator loop + chat API + a discovered list of "capability tools"
 - [ ] This repo registers *health tools* (SQL tool + schema docs + example questions)

@@ -102,3 +102,110 @@ Phase 1 deliberately uses systemd timers over the existing compose stack ("pick 
 one first"). A cluster only becomes appropriate at Phase 2, and only after a real backup
 story exists — at that point the same image becomes a `CronJob` (stateless workload;
 Postgres stays host-docker until a PVC + backup story lands).
+---
+
+# Health Assistant on the stack (Phase 3)
+
+The assistant (`chat` service) joins the same compose stack, LAN-only. Two-repository
+shape (ADR-0006): the generic core `health-assistant-core` lives beside this repo and is
+baked into the chat image at build time.
+
+| Artifact | Purpose |
+|---|---|
+| `Dockerfile.chat` | the chat service image: deps + this repo's `src` + the core's `src` (`PYTHONPATH=/app/src:/app/core_src`), uvicorn factory entry |
+| `docker-compose.yml` → `chat` | LAN-bound FastAPI/SSE service, DB as the read-only `chatbot` role, `.env` mounted `:ro` |
+| `deploy/eval-corpus.sh` | the eval-corpus merge gate (skips cleanly without `LLM_API_KEY`) |
+| `docs/adr/0006-…` | two-repo architecture + execute/privacy contract |
+
+## Prerequisites on the host
+
+The two repos must be siblings, because the compose build uses
+`additional_contexts: core: ../health-assistant-core`:
+
+```bash
+ls -d /opt/health-pipeline /opt/health-assistant-core   # both checked out
+```
+
+`.env` gains the assistant block (see `.env.example` — CHATBOT_DB_PASSWORD for the
+read-only role, plus the LLM provider seam with its privacy statement). The `chatbot`
+role is provisioned idempotently by the pipeline's `ensure_schemas`, like the
+`dashboard` role — the first sync after the change creates it.
+
+## Build & bring up
+
+```bash
+cd /opt/health-pipeline
+docker compose build chat            # or: make chat
+docker compose up -d                 # whole stack incl. chat   (or: make chat-up)
+docker compose logs -f chat
+```
+
+The service listens on the host's port **8000 only** — no port-forward on the router and
+no auth in v1: your home network is the access boundary. A restart preserves the Chat
+Log, the role grants, and the configuration; conversations are in-memory and ephemeral
+by design.
+
+Development-mode override (live code, no rebuild) — `docker-compose.dev.yml`:
+
+```yaml
+services:
+  chat:
+    volumes:
+      - ./src:/app/src:ro
+      - ../health-assistant-core/src:/app/core_src:ro
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d chat
+```
+
+## Provider configuration (and the privacy boundary)
+
+The provider seam is environment-only: `LLM_PROVIDER=stub` runs the deterministic test
+provider (dev only); anything else selects the OpenAI-compatible adapter configured by
+`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` — Ollama, Bosch BMF, DeepSeek native, or
+OpenCode Go are one env block apart.
+
+**Privacy statement, in plain words:** with a hosted gateway (the default), your questions
+AND the result rows they produce are sent to the provider. This boundary is explicit and
+auditable — every exchange is in `pipeline.chat_log` with the provider that answered —
+and there is **no silent local fallback** when the provider is down or the key is missing:
+you get a clean refusal instead of a wrong or unlogged answer. Ollama local is the privacy
+default whenever you prefer; each provider change must pass the eval gate (below) first.
+
+Verify the exact model id from the OpenCode Console model list before first use and write
+it into `LLM_MODEL`; a wrong id fails loudly as a refusal, never as a wrong answer.
+
+## Verify
+
+```bash
+# the page is up on the LAN
+curl -s http://<host>:8000/ | head -5
+# a real question through the provider, streamed
+curl -sN -X POST http://<host>:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"how was my sleep last night?","session_id":"verify"}'
+# every exchange is auditable in the Chat Log
+docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
+  "SELECT session_id, provider, outcome, row_count, sql FROM pipeline.chat_log ORDER BY id DESC LIMIT 5"
+```
+
+## The eval gate (Phase 3 "done when")
+
+```bash
+cd /opt/health-pipeline
+bash deploy/eval-corpus.sh            # or: make eval-gate
+```
+
+The golden corpus (25 pairs, hand-derived from the synthetic takeout) runs against a
+fresh scratch database as the `chatbot` role through the real provider selected by the
+environment: ≥90% executed-correct on data/empty pairs and 100% on refusals is the merge
+gate; below that the script exits non-zero and names the question classes to fix. Without
+`LLM_API_KEY` it prints a skip and exits 0 — the deterministic suite never depends on it.
+Deterministic mechanics check (no network, no key): `uv run pipeline eval --self-check`.
+
+## Backup
+
+The existing nightdump is a full `pg_dump` of the stack database, so it already includes
+`pipeline.chat_log` — the assistant's audit trail (and eval-corpus seed) is covered by
+the Phase-1 backup job with no changes. Data is data.

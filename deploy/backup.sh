@@ -24,6 +24,9 @@ fi
 mkdir -p backups
 
 echo "backup: ${EXT} dump -> ${OUT}"
+# Full-database dump: bronze/silver/gold/pipeline schemas, including pipeline.chat_log
+# (the Health Assistant's audit trail — data is data, Phase 3). The assistant needs no
+# special-casing here.
 if [[ "${BACKUP_FORMAT:-plain}" == "custom" ]]; then
   docker compose exec -T db pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "${OUT}"
 else

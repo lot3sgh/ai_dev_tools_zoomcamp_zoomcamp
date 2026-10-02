@@ -1,4 +1,4 @@
-.PHONY: up down sync-local sync-drive test typecheck image sync-drive-container backup install-timers uninstall-timers
+.PHONY: up down sync-local sync-drive test typecheck image sync-drive-container chat chat-up eval-gate backup install-timers uninstall-timers
 
 up:          ## Bring up the Postgres database (docker compose)
 	docker compose up -d db
@@ -18,7 +18,16 @@ image:       ## Build the containerized sync runner (Linux deployment)
 sync-drive-container:  ## Run a Drive sync through the container (same engine, once)
 	docker compose --profile sync run --rm sync
 
-backup:      ## Take a pg_dump now (deploy/backup.sh; optional off-box push)
+chat:       ## Build the Health Assistant chat image (bakes the generic core, ADR-0006)
+	docker compose build chat
+
+chat-up:    ## Bring the chat service up on the LAN (with the rest of the stack)
+	docker compose up -d chat
+
+eval-gate:  ## Eval-corpus merge gate (skips cleanly without LLM_API_KEY)
+	bash deploy/eval-corpus.sh
+
+backup:     ## Take a pg_dump now (deploy/backup.sh; optional off-box push)
 	bash deploy/backup.sh
 
 # --- Linux host only: systemd timers (Phase 1). The Makefile refuses on macOS on purpose. ---

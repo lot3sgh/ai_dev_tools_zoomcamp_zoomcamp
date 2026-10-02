@@ -66,6 +66,42 @@ services:
       db:
         condition: service_healthy
 
+  # The Health Assistant chat service (Phase 3). LAN-only: no port-forward, no auth in v1 —
+  # the home network is the access boundary. Two-repo shape: the generic core is baked in
+  # via the `core` additional build context (docs/deploy.md covers the dev-mount override).
+  # `docker compose up -d` brings it up with the rest of the stack; restart preserves the
+  # Chat Log, the role grants, and the configuration (conversations are ephemeral by design).
+  chat:
+    build:
+      context: .
+      dockerfile: Dockerfile.chat
+      additional_contexts:
+        core: ../health-assistant-core
+    image: health-pipeline-chat:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"      # LAN only — never port-forwarded to the internet
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Read-only Semantic Layer login for run_health_query (provisioned idempotently)
+      CHATBOT_DB_PASSWORD: ${CHATBOT_DB_PASSWORD:-}
+      # LLM provider seam (see .env.example for the privacy statement):
+      # LLM_PROVIDER=stub is the deterministic dev provider; anything else is the
+      # OpenAI-compatible gateway selected by the three LLM_* variables below.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   health_pipeline_pgdata:
   grafana_data:

@@ -1,0 +1,47 @@
+# Health Assistant chat service — the conversational UI container (Phase 3, ticket 05).
+#
+# Two-repo shape (ADR-0006): the generic core (health-assistant-core) is baked into this
+# image as a second source tree (PYTHONPATH=/app/src:/app/core_src). The compose service
+# wires the core as an additional build context:
+#
+#   chat:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.chat
+#       additional_contexts:
+#         core: ../health-assistant-core
+#
+# Development override: mount both repositories read-only over /app/src and /app/core_src
+# (see docs/deploy.md) — same entry point, live code, no rebuild.
+#
+# Runtime inputs (not baked in): .env (mounted by compose) supplies DB + chatbot role +
+# LLM_* configuration. The app listens on 0.0.0.0 inside the container; the *only*
+# exposure is the compose port mapping — the LAN is the boundary in v1 (no auth).
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src:/app/core_src \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# 1. Dependencies — pinned, hashed; this layer only rebuilds when requirements.txt changes.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 2. This repository's application code (health side: service, tool, registry wiring).
+COPY src ./src
+
+# 3. The generic core (health-assistant-core/src) — baked in from the additional context.
+COPY --from=core src ./core_src
+
+# 4. Run as an unprivileged user (no write access needed; the Chat Log is the DB's job).
+RUN useradd --create-home --uid 10002 pipeline \
+    && chown -R pipeline:pipeline /app
+USER pipeline
+
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "assistant.server:create_app", "--factory", \
+     "--host", "0.0.0.0", "--port", "8000"]
