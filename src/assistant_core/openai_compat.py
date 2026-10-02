@@ -43,6 +43,9 @@ class OpenAICompatProvider:
     timeout_s: float = 20.0
     temperature: float = 0.0
     chat_path: str = DEFAULT_CHAT_PATH
+    # Gateways (e.g. OpenCode Go) expect a client's own user agent, not a generic
+    # http-library name, for routing and abuse monitoring.
+    user_agent: str = "assistant-core/0.1"
 
     def name(self) -> str:
         return self.provider_name or self.model
@@ -73,6 +76,7 @@ class OpenAICompatProvider:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": self.user_agent,
             },
             method="POST",
         )
