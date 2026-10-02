@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from assistant_core import Orchestrator, OpenAICompatProvider, Tool, ToolResult
+from assistant_core import Orchestrator, OpenAICompatProvider, StubProvider, Tool, ToolResult
 
 MODEL = "opencode-go/deepseek-v4-flash"
 
@@ -39,6 +39,7 @@ class _GatewaySession:
     counter = 0
     last_body: dict | None = None
     last_auth: str | None = None
+    last_session: str | None = None
 
 
 class _GatewayHandler(BaseHTTPRequestHandler):
@@ -47,6 +48,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         payload = self.rfile.read(length)
         _GatewaySession.last_body = json.loads(payload or b"{}")
         _GatewaySession.last_auth = self.headers.get("Authorization")
+        _GatewaySession.last_session = self.headers.get("x-opencode-session")
         n = _GatewaySession.counter
         _GatewaySession.counter += 1
         status = _GatewaySession.statuses[min(n, len(_GatewaySession.statuses) - 1)]
@@ -107,6 +109,33 @@ def test_wire_contract_sends_model_stream_and_bearer(gateway):
     assert _GatewaySession.last_body["messages"][-1]["content"] == "q?"
     assert _GatewaySession.last_auth == "Bearer secret-key"
     assert provider.name() == MODEL
+
+
+def test_session_id_forwarded_as_required_gateway_header(gateway):
+    """OpenCode Go rejects requests without x-opencode-session; the seam must forward it."""
+    _GatewaySession.responses = [_sse("hi")]
+    provider = OpenAICompatProvider(_url(gateway), MODEL, api_key="k")
+    list(provider.stream([{"role": "user", "content": "q?"}], session_id="conv-7"))
+    assert _GatewaySession.last_session == "conv-7"
+    # not sent when the caller has no session id
+    list(provider.stream([{"role": "user", "content": "q?"}]))
+    assert _GatewaySession.last_session is None
+
+
+def test_orchestrator_forwards_session_id_to_the_provider():
+    seen: list[str | None] = []
+
+    class _Recording(StubProvider):
+        def stream(self, messages, *, session_id=None):
+            seen.append(session_id)
+            return super().stream(messages, session_id=session_id)
+
+    out = Orchestrator(_Recording(turns=[{"sql": "SELECT 1"}, {"answer": "x"}]),
+                       _EchoTool()).answer("q?", session_id="conv-9")
+    assert out.text == "x"
+    assert seen == ["conv-9", "conv-9"]  # action turn + phrasing turn
+    assert Orchestrator(_Recording(), _EchoTool()).answer("q?").text is not None
+    assert seen[-1] is None
 
 
 def test_name_reports_provider_label_when_given(gateway):

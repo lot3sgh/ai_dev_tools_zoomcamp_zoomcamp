@@ -45,6 +45,6 @@ class StubProvider:
     def complete(self, messages: list[dict]) -> str:
         return self._next_turn()
 
-    def stream(self, messages: list[dict]):
+    def stream(self, messages: list[dict], *, session_id: str | None = None):
         for piece in chunk(self._next_turn()):
             yield piece

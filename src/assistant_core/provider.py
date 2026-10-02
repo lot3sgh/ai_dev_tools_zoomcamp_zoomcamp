@@ -18,12 +18,16 @@ class Provider(Protocol):
     - ANSWER/REFUSE turns stream the user-visible text token by token.
 
     complete() is the non-streaming convenience used by callers that do not relay.
+    session_id, when the caller knows it, is forwarded so gateways that need a stable
+    per-conversation id (e.g. OpenCode Go: x-opencode-session) can route and cache.
     """
 
     def complete(self, messages: list[dict]) -> str:
         ...
 
-    def stream(self, messages: list[dict]) -> Iterator[str]:
+    def stream(
+        self, messages: list[dict], *, session_id: str | None = None
+    ) -> Iterator[str]:
         """Yield the completion in chunks, in order (may be a single giant chunk)."""
         ...
 

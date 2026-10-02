@@ -77,17 +77,27 @@ class Orchestrator:
     max_repairs: int = 2
     few_shots: str = ""
 
-    def answer(self, question: str, session: list[dict] | None = None) -> Outcome:
+    def answer(
+        self,
+        question: str,
+        session: list[dict] | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> Outcome:
         """Synchronous shorthand: collect the stream and return the terminal Outcome."""
         outcome: Outcome | None = None
-        for event in self.answer_stream(question, session):
+        for event in self.answer_stream(question, session, session_id=session_id):
             if event.kind == "outcome":
                 outcome = event.outcome
         assert outcome is not None, "stream ended without a terminal outcome"
         return outcome
 
     def answer_stream(
-        self, question: str, session: list[dict] | None = None
+        self,
+        question: str,
+        session: list[dict] | None = None,
+        *,
+        session_id: str | None = None,
     ) -> Iterator[StreamEvent]:
         messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(
@@ -102,7 +112,7 @@ class Orchestrator:
         kind: str
         payload: str
         while True:
-            kind, payload = yield from self._stream_turn(messages)
+            kind, payload = yield from self._stream_turn(messages, session_id=session_id)
             if kind == "ANSWER":
                 yield StreamEvent(kind="outcome",
                                   outcome=Outcome(text=payload, repairs=repairs))
@@ -137,7 +147,7 @@ class Orchestrator:
                 f"The query returned {result.row_count} row(s)"
                 f"{' (truncated at the cap)' if result.truncated else ''}:\n"
                 f"{_render(result)}"})
-            kind, payload = yield from self._stream_turn(messages)
+            kind, payload = yield from self._stream_turn(messages, session_id=session_id)
             if kind == "REFUSE":
                 yield StreamEvent(kind="outcome",
                                   outcome=Outcome(refusal=payload, sql=last_sql,
@@ -152,7 +162,7 @@ class Orchestrator:
             return
 
     def _stream_turn(
-        self, messages: list[dict]
+        self, messages: list[dict], *, session_id: str | None = None
     ) -> Generator[StreamEvent, None, tuple[str, str]]:
         """One provider completion.
 
@@ -163,7 +173,7 @@ class Orchestrator:
         buffer = ""
         mode = "pending"      # pending | sql | answer | refuse | free
         payload: str = ""
-        for chunk in self.provider.stream(messages):
+        for chunk in self.provider.stream(messages, session_id=session_id):
             if mode == "pending":
                 buffer += chunk
                 mode = _decide(buffer)

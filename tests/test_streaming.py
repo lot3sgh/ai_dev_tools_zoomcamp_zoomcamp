@@ -34,7 +34,7 @@ class _RawProvider:
     def complete(self, messages: list[dict]) -> str:
         return self._text
 
-    def stream(self, messages: list[dict]):
+    def stream(self, messages: list[dict], *, session_id: str | None = None):
         for i in range(0, len(self._text), 4):
             yield self._text[i : i + 4]
 

@@ -55,7 +55,9 @@ class OpenAICompatProvider:
     def complete(self, messages: list[dict]) -> str:
         return "".join(self.stream(messages))
 
-    def stream(self, messages: list[dict]) -> Iterator[str]:
+    def stream(
+        self, messages: list[dict], *, session_id: str | None = None
+    ) -> Iterator[str]:
         if not self.api_key:
             yield _REFUSE.format(
                 "LLM_API_KEY is not set — refusing with no fallback. "
@@ -70,14 +72,19 @@ class OpenAICompatProvider:
             "temperature": self.temperature,
         }
         url = _strip_trailing_slash(self.base_url) + self.chat_path
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": self.user_agent,
+        }
+        if session_id:
+            # Some OpenAI-compatible gateways (OpenCode Go) require a stable
+            # per-conversation id for routing and prompt caching.
+            headers["x-opencode-session"] = session_id
         request = urllib.request.Request(
             url,
             data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-                "User-Agent": self.user_agent,
-            },
+            headers=headers,
             method="POST",
         )
         try:
