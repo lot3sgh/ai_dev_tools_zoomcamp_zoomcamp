@@ -4,7 +4,7 @@ The provider-agnostic chatbot core: an orchestrator loop, a provider adapter sea
 capability-tools registry. Domain knowledge lives in **registered tools** owned by other
 projects — this package knows none of them.
 
-## The agent loop (v0.1, plain-text action protocol)
+## The agent loop (plain-text action protocol, streamed)
 
 The orchestrator asks the provider for an action. The provider answers with exactly one of:
 
@@ -19,9 +19,21 @@ provider repair (bounded); on success, hand the result rows back to the provider
 the answer. That second round-trip — *result rows transit the provider* — is the privacy
 boundary of the assistant, kept explicit here.
 
-> The protocol is v0.1 for deterministic development. The real-provider adapter (Phase 3,
-> ticket 03) maps function/tool calling onto the same `Query | Answer | Refuse` action
-> surface so the loop itself does not change.
+The loop is streaming: `Provider.stream(messages)` feeds every turn token-by-token, and
+`Orchestrator.answer_stream(question, session)` yields `StreamEvent`s — `token` (the
+user-visible text, live), `sql` (one event per *executed* tool query, with row count and
+repair count; SQL never leaks as raw tokens), and a terminal `outcome`. `answer()` is the
+synchronous shorthand that collects the stream.
+
+## Providers
+
+- `StubProvider` — deterministic scripted turns for tests: no network, no key.
+- `OpenAICompatProvider` — a zero-dependency (stdlib) OpenAI chat-completions client
+  (`stream: true`) for any compatible gateway: Ollama `/v1`, Bosch BMF, DeepSeek native,
+  OpenCode Go — one config flip apart. Missing key, refused HTTP status, unreachable
+  host, and malformed streams are each a distinct `REFUSE` (never a crash, never a
+  silent fallback provider). `name()` reports the model id, so the Chat Log names who
+  answered.
 
 ## Registration
 
