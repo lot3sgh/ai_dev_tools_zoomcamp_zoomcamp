@@ -32,7 +32,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "google-api-python-client", specifier = ">=2.150" },
     { name = "google-auth", specifier = ">=2.37" },
-    { name = "health-assistant-core", marker = "extra == 'dev'", directory = "../health-assistant-core" },
+    { name = "health-assistant-core", marker = "extra == 'dev'", directory = "health-assistant-core" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
@@ -529,7 +529,7 @@ wheels = [
 [[package]]
 name = "health-assistant-core"
 version = "0.1.0"
-source = { directory = "../health-assistant-core" }
+source = { directory = "health-assistant-core" }
 
 [package.metadata]
 requires-dist = [

@@ -106,8 +106,9 @@ Postgres stays host-docker until a PVC + backup story lands).
 
 # Health Assistant on the stack (Phase 3)
 
-The assistant (`chat` service) joins the same compose stack, LAN-only. Two-repository
-shape (ADR-0006): the generic core `health-assistant-core` lives beside this repo and is
+The assistant (`chat` service) joins the same compose stack, LAN-only. Repository shape
+(ADR-0006, addendum 2026-10-02): monorepo — the generic core `health-assistant-core`
+lives inside this checkout (its own subtree history) and is
 baked into the chat image at build time.
 
 | Artifact | Purpose |
@@ -115,15 +116,15 @@ baked into the chat image at build time.
 | `Dockerfile.chat` | the chat service image: deps + this repo's `src` + the core's `src` (`PYTHONPATH=/app/src:/app/core_src`), uvicorn factory entry |
 | `docker-compose.yml` → `chat` | LAN-bound FastAPI/SSE service, DB as the read-only `chatbot` role, `.env` mounted `:ro` |
 | `deploy/eval-corpus.sh` | the eval-corpus merge gate (skips cleanly without `LLM_API_KEY`) |
-| `docs/adr/0006-…` | two-repo architecture + execute/privacy contract |
+| `docs/adr/0006-…` | monorepo architecture + execute/privacy contract |
 
 ## Prerequisites on the host
 
-The two repos must be siblings, because the compose build uses
-`additional_contexts: core: ../health-assistant-core`:
+The repo is a monorepo: the generic core lives at `health-assistant-core/` inside the same
+checkout, because the compose build uses `additional_contexts: core: ./health-assistant-core`:
 
 ```bash
-ls -d /opt/health-pipeline /opt/health-assistant-core   # both checked out
+ls -d /opt/health-pipeline /opt/health-pipeline/health-assistant-core   # one checkout
 ```
 
 `.env` gains the assistant block (see `.env.example` — CHATBOT_DB_PASSWORD for the
@@ -152,8 +153,8 @@ services:
   chat:
     volumes:
       - ./src:/app/src:ro
-      - ../health-assistant-core/src:/app/core_src:ro
-```
+      - ./health-assistant-core/src:/app/core_src:ro   # the core is inside this checkout
+    ```
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d chat

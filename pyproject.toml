@@ -32,8 +32,9 @@ build-backend = "hatchling.build"
 packages = ["src/pipeline", "src/assistant"]
 
 [tool.uv.sources]
-# The generic core lives in its own repo (Phase 4 pod-able core); dev/test only here.
-health-assistant-core = { path = "../health-assistant-core" }
+# The generic chatbot core lives in this monorepo (health-assistant-core/); dev/test only
+# here — it is a plain path dependency, never published from this project.
+health-assistant-core = { path = "health-assistant-core" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

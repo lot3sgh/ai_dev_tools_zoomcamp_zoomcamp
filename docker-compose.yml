@@ -67,7 +67,7 @@ services:
         condition: service_healthy
 
   # The Health Assistant chat service (Phase 3). LAN-only: no port-forward, no auth in v1 —
-  # the home network is the access boundary. Two-repo shape: the generic core is baked in
+  # the home network is the access boundary. Monorepo shape: the generic core is baked in
   # via the `core` additional build context (docs/deploy.md covers the dev-mount override).
   # `docker compose up -d` brings it up with the rest of the stack; restart preserves the
   # Chat Log, the role grants, and the configuration (conversations are ephemeral by design).
@@ -76,7 +76,7 @@ services:
       context: .
       dockerfile: Dockerfile.chat
       additional_contexts:
-        core: ../health-assistant-core
+        core: ./health-assistant-core
     image: health-pipeline-chat:latest
     restart: unless-stopped
     ports:

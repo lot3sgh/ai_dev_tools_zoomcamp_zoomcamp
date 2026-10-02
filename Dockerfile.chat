@@ -1,17 +1,17 @@
 # Health Assistant chat service — the conversational UI container (Phase 3, ticket 05).
 #
-# Two-repo shape (ADR-0006): the generic core (health-assistant-core) is baked into this
-# image as a second source tree (PYTHONPATH=/app/src:/app/core_src). The compose service
-# wires the core as an additional build context:
+# Monorepo shape: the generic core (health-assistant-core) is baked into this image as a
+# second source tree (PYTHONPATH=/app/src:/app/core_src). The compose service wires the
+# core as an additional build context:
 #
 #   chat:
 #     build:
 #       context: .
 #       dockerfile: Dockerfile.chat
 #       additional_contexts:
-#         core: ../health-assistant-core
+#         core: ./health-assistant-core
 #
-# Development override: mount both repositories read-only over /app/src and /app/core_src
+# Development override: mount both source trees read-only over /app/src and /app/core_src
 # (see docs/deploy.md) — same entry point, live code, no rebuild.
 #
 # Runtime inputs (not baked in): .env (mounted by compose) supplies DB + chatbot role +

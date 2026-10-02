@@ -119,7 +119,8 @@ The data is structured; "how was my sleep yesterday?" is a query, not a retrieva
 > provider = OpenCode Go / `opencode-go/deepseek-v4-flash` via an OpenAI-compatible env seam,
 > no silent fallback; eval-corpus gate (25 pairs; ≥90% executed-correct, 100% refusals) as the
 > merge gate — `make eval-gate`; single-file SSE web UI on the LAN (port 8000, no auth in v1);
-> generic core in its own repo (two-repo shape). ADR-0006 (two-repo + execute/privacy contract)
+> generic core in this monorepo (`health-assistant-core/`; monorepo per ADR-0006 addendum). ADR-0006
+> (two-repo architecture + execute/privacy contract, consolidated to a monorepo 2026-10-02)
 > accompanies the spec. First real-provider adoption (OpenCode Go / Ollama / BMF) still needs its
 > own corpus gate run before use.
 
@@ -137,7 +138,7 @@ The data is structured; "how was my sleep yesterday?" is a query, not a retrieva
 Reuse across home-lab projects: the core stays generic, domain knowledge lives in tools.
 
 > Status: the core's loop, provider-adapter seam, tools registry and streaming events exist
-> (health-assistant-core, built in Phase 3 per the two-repo shape); “chat API” deliberately
+> (health-assistant-core, built in Phase 3; monorepo — its own subtree history in this checkout); “chat API” deliberately
 > lives on the health side (ADR-0006). Remaining Phase-4 work: a capability *discovery*
 > convention, a second registered tool, and a published container/chart in the lab registry.
 

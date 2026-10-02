@@ -37,7 +37,7 @@ The curated SQL surface exposed to conversational consumers (the chatbot; Grafan
 _Avoid_: Dataset, views, query surface
 
 **Health Assistant**:
-The conversational application (Phase 3): FastAPI + SSE chat endpoint, tool-calling orchestrator with one tool (`run_health_query`), a single-file mobile-friendly web UI, deployed as its own service on the Linux host. It talks to the Semantic Layer through the read-only `chatbot` role and records every exchange in the Chat Log. The generic core lives in its own repo; this repository registers the health tools.
+The conversational application (Phase 3): FastAPI + SSE chat endpoint, tool-calling orchestrator with one tool (`run_health_query`), a single-file mobile-friendly web UI, deployed as its own service on the Linux host. It talks to the Semantic Layer through the read-only `chatbot` role and records every exchange in the Chat Log. The generic core lives in this monorepo at `health-assistant-core/` (its own subtree history); this repository registers the health tools.
 _Avoid_: Chatbot (keep as the product category), bot, chat app
 
 **run_health_query**:

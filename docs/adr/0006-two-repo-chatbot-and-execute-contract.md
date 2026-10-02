@@ -16,6 +16,14 @@ makes direct text-to-SQL safe on private health data.
   Semantic Layer, the eval corpus + merge gate, the `chatbot` role provisioning, the Chat Log, the
   FastAPI/SSE service + single-file UI, and the compose glue.
 
+> **Addendum (2026-10-02, operator decision): monorepo.** The two repositories were consolidated
+> into one: `health-assistant-core` now lives as `health-assistant-core/` inside this checkout
+> (merged as a subtree, its full history preserved). The architectural seam is unchanged — the
+> core remains a self-contained package with its own pyproject/tests, and the compose build still
+> wires it as an additional build context (`core: ./health-assistant-core`); the path sources
+> were updated accordingly. Rationale: single push/branch for the whole assistant, simpler
+> deployment on the Linux host (one checkout), while the core stays independently testable.
+
 Why now: Phase 4's "pod-able core" is a continuation, not a rewrite — other home-lab projects
 (media index, energy logs, …) register their own capability tools without touching the core's code.
 The composition seam is a `Registry` of `Tool`s; this repo registers exactly one
