@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from assistant_core import Orchestrator, OpenAICompatProvider, StubProvider, Tool, ToolResult
+from assistant_core import Orchestrator, OpenAICompatProvider, Tool, ToolResult
 
 MODEL = "opencode-go/deepseek-v4-flash"
 

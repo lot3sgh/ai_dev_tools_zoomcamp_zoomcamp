@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator
 
 DEFAULT_CHAT_PATH = "/chat/completions"
@@ -43,7 +43,6 @@ class OpenAICompatProvider:
     timeout_s: float = 20.0
     temperature: float = 0.0
     chat_path: str = DEFAULT_CHAT_PATH
-    extra_headers: dict[str, str] = field(default_factory=dict)
 
     def name(self) -> str:
         return self.provider_name or self.model
@@ -74,7 +73,6 @@ class OpenAICompatProvider:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
-                **self.extra_headers,
             },
             method="POST",
         )
