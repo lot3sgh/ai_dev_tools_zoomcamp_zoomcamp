@@ -98,8 +98,3 @@ def build_fixture_zip(target: Path, name: str = "takeout-test.zip") -> Path:
         "Takeout/Google Health/Temperature/temperature.csv": TEMP_CSV,
         "Takeout/Google Health/Physical Activity_GoogleData/activity.csv": ACTIVITY_CSV,
     })
-
-
-def fixture_takeout_name() -> str:
-    """The archive name the fixture uses (gold.freshness.takeout is deterministic)."""
-    return "takeout-test.zip"

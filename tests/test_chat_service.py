@@ -14,7 +14,6 @@ import os
 
 from assistant_core import StubProvider
 
-os.environ.setdefault("CHATBOT_DB_PASSWORD", "test_chatbot_pw")
 
 
 def _sync(source_dir):

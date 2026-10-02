@@ -11,11 +11,9 @@ import json
 import os
 
 import psycopg
-import pytest
 
-from assistant_core import Orchestrator, StubProvider
+from assistant_core import StubProvider
 
-os.environ.setdefault("CHATBOT_DB_PASSWORD", "test_chatbot_pw")
 
 from assistant import corpus, eval as evalmod  # noqa: E402
 
@@ -136,8 +134,6 @@ def test_few_shots_are_prompt_ready():
 
 def test_few_shots_reach_the_system_prompt(reset_db, source_dir):
     """The corpus doubles as the few-shot bank: the provider actually sees the examples."""
-    from assistant_core import Orchestrator
-
     seen: list[list[dict]] = []
 
     class _RecordingStub(StubProvider):

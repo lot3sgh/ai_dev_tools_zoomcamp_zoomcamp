@@ -7,9 +7,7 @@ dropped, so runs are isolated.
 
 from __future__ import annotations
 
-import io
 import os
-import zipfile
 from pathlib import Path
 
 import psycopg
@@ -23,9 +21,11 @@ config.load_env()
 
 # The read-only analytics login (Grafana/chatbot); ensure_schemas provisions it.
 os.environ.setdefault("DASHBOARD_DB_PASSWORD", "test_dashboard_pw")
+# The assistant's read-only Semantic Layer role (Phase 3), same provisioning path.
+os.environ.setdefault("CHATBOT_DB_PASSWORD", "test_chatbot_pw")
 
 # The golden synthetic takeout lives in one place (also used by the eval corpus gate).
-from assistant.fixtures import (  # noqa: E402  (re-exported for existing test imports)
+from assistant.fixtures import (  # noqa: E402,F401  (re-exported for existing test imports)
     ACTIVITY_CSV,
     AZM_AUG,
     AZM_SEPT,

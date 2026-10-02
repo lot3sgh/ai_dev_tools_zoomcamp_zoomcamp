@@ -15,7 +15,6 @@ import pytest
 from assistant_core import Registry, StubProvider
 
 # conftest provisions the dashboard role; the assistant needs its own read-only role.
-os.environ.setdefault("CHATBOT_DB_PASSWORD", "test_chatbot_pw")
 
 
 def _sync(source_dir):

@@ -81,7 +81,7 @@ def run_eval(args: argparse.Namespace) -> int:
     provider selected by the environment and skips cleanly when no LLM_API_KEY is present —
     that is the CI merge gate, blocking merges below 90% execution accuracy / 100% refusals.
     """
-    from assistant import corpus, eval as evalmod, providers
+    from assistant import eval as evalmod, providers
     from assistant.providers import ProviderConfigError
 
     if args.self_check:

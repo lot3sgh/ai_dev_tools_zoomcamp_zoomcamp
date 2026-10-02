@@ -25,7 +25,6 @@ from decimal import Decimal
 from assistant_core import Outcome, Provider, Registry, StubProvider, Tool, ToolResult
 
 from assistant import corpus
-from assistant.tool import RunHealthQuery
 
 DATA_THRESHOLD = 0.90   # >=90% execution accuracy on data/empty pairs
 REFUSAL_THRESHOLD = 1.0  # 100% on refusals
@@ -246,8 +245,6 @@ def run_gate(
     Idempotent: the scratch database is dropped and recreated on every run, so re-running
     the gate is repeatable with identical outcomes (the repo's rerun discipline).
     """
-    from pipeline import config, db
-
     db_name = db_name or fixture_database_name()
     _fresh_database(db_name)
 

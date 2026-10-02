@@ -118,6 +118,7 @@ def create_app(provider: Provider | None = None, *, registry: Registry | None = 
                     "text": outcome.text,
                     "detail": outcome.refusal or outcome.error,
                     "row_count": outcome.row_count,
+                    "truncated": outcome.truncated,
                     "repairs": outcome.repairs,
                     "log_id": log_id,
                 })
