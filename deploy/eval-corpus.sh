@@ -11,10 +11,19 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# The key lives in the repo's .env (config.load_env reads it); mirror it into this shell
+# so the skip check matches what `pipeline eval` actually sees.
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 if [[ -z "${LLM_API_KEY:-}" ]]; then
-  echo "eval-corpus: LLM_API_KEY not set — skipping the provider gate (deterministic suite unaffected)"
+  echo "eval-corpus: LLM_API_KEY not set (.env or environment) — skipping the provider gate (deterministic suite unaffected)"
   exit 0
 fi
 
-echo "eval-corpus: running the golden corpus ($(grep -c '"question"' src/assistant/corpus.py) pairs) — provider gate"
+echo "eval-corpus: running the golden corpus ($(grep -c 'CorpusPair(' src/assistant/corpus.py) pairs) — provider gate"
 uv run pipeline eval

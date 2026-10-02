@@ -24,11 +24,13 @@ def _sync(source_dir):
     return main(["sync", "--source", "local", "--path", str(source_dir)])
 
 
-def _chatbot_conn(chatbot_password: str = "test_chatbot_pw"):
+def _chatbot_conn(chatbot_password: str | None = None):
+    """Connect as the chatbot role; the password follows config (see test_chat_engine)."""
     from pipeline import config
 
+    password = chatbot_password or config.chatbot_password() or "test_chatbot_pw"
     kw = {k: config.db_env()[k] for k in ("dbname", "host", "port")}
-    kw.update(user="chatbot", password=chatbot_password)
+    kw.update(user="chatbot", password=password)
     return psycopg.conninfo.make_conninfo(**kw)
 
 
@@ -89,8 +91,16 @@ def test_scoring_is_order_insensitive():
     b = [(2, "y"), (1, "x")]
     assert evalmod.rows_match(a, b)
     assert evalmod.rows_match(a, a)
-    # duplicates are respected (multi-set, not set)
+    # duplicates are respected (two expected rows need two executed rows)
     assert not evalmod.rows_match([(1,), (1,)], [(1,)])
+
+
+def test_scoring_ignores_extra_columns_but_not_extra_rows():
+    """Judge semantics, not style: added context columns are fine; fabricated rows are not."""
+    assert evalmod.rows_match([(1, "x", "extra")], [(1, "x")])
+    assert evalmod.rows_match([("2026-09-20", 28)], [[28]])
+    assert not evalmod.rows_match([(1,), (2,)], [(1,)])
+    assert not evalmod.rows_match([(1, "x")], [(1, "x"), (2, "y")])
 
 
 def test_scoring_detects_wrong_values():
@@ -137,7 +147,7 @@ def test_few_shots_reach_the_system_prompt(reset_db, source_dir):
     seen: list[list[dict]] = []
 
     class _RecordingStub(StubProvider):
-        def stream(self, messages):
+        def stream(self, messages, *, session_id=None):
             seen.append(messages)
             return iter([])  # empty stream -> empty answer
 

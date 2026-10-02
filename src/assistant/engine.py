@@ -74,7 +74,7 @@ def answer_stream(
 ) -> Iterator[StreamEvent]:
     """Streaming answer: token/sql/outcome events. Caller owns Chat Log logging."""
     orch = make_orchestrator(provider, registry=registry, few_shots=few_shots, **rails)
-    yield from orch.answer_stream(question, session)
+    yield from orch.answer_stream(question, session, session_id=session_id)
 
 
 def answer_question(

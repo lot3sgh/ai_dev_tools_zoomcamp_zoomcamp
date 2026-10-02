@@ -16,7 +16,6 @@ The corpus is also consumed as few-shots by this runner, exactly as the service 
 from __future__ import annotations
 
 import os
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -44,10 +43,35 @@ def normalize(value):
 
 
 def rows_match(executed: list[tuple], expected: list[list]) -> bool:
-    """Executed result rows vs expected literals, as order-insensitive multi-sets."""
-    executed_set = Counter(tuple(normalize(v) for v in row) for row in executed)
-    expected_set = Counter(tuple(normalize(v) for v in row) for row in expected)
-    return executed_set == expected_set
+    """Executed result rows vs expected literals, order-insensitive and projection-insensitive.
+
+    The spec's rationale: judge semantics, not style. So the model may add contextual
+    columns (date alongside steps, fw_version alongside devices) — every expected row must
+    appear as an ordered value-subsequence of a distinct executed row, and the row count
+    must match (extra rows are fabrication / duplicate rows — rejected). An empty
+    expectation is the honest-empty case: executed must be empty too.
+    """
+    executed_set = [tuple(normalize(v) for v in row) for row in executed]
+    expected_set = [tuple(normalize(v) for v in row) for row in expected]
+    if not expected_set:
+        return not executed_set
+    if len(executed_set) != len(expected_set):
+        return False
+    unused = list(executed_set)
+    for row in expected_set:
+        for i, candidate in enumerate(unused):
+            if _contains(candidate, row):
+                unused.pop(i)
+                break
+        else:
+            return False
+    return True
+
+
+def _contains(haystack: tuple, needle: tuple) -> bool:
+    """Haystack contains needle as an ordered subsequence (extra values allowed between)."""
+    iterator = iter(haystack)
+    return all(any(value == probe for probe in iterator) for value in needle)
 
 
 # ------------------------------------------------------------------ the runner
@@ -174,7 +198,7 @@ def run_corpus(
         executed: list[tuple] = []
         recorder = _RecordingTool(inner, executed)
         orch = Orchestrator(provider_factory(pair), recorder, few_shots=few_shots)
-        outcome = orch.answer(pair.question)
+        outcome = orch.answer(pair.question, session_id="eval-corpus")
         results.append(score_pair(pair, executed, outcome))
     return EvalReport(results)
 

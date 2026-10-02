@@ -48,7 +48,7 @@ class CorpusStub(StubProvider):
     def complete(self, messages: list[dict]) -> str:
         return "".join(self.stream(messages))
 
-    def stream(self, messages: list[dict]):
+    def stream(self, messages: list[dict], *, session_id: str | None = None):
         last_content = messages[-1]["content"] if messages else ""
         if last_content.startswith(("The query returned", "Your SQL failed")):
             # phrasing / repair turn: the executed SQL already surfaced as a sql event

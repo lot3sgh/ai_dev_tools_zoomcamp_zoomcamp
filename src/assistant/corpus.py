@@ -213,7 +213,7 @@ def load() -> list[CorpusPair]:
 
 # ------------------------------------------------------------------ the few-shot bank
 
-def few_shots(pairs: list[CorpusPair] | None = None, *, limit: int = 6) -> str:
+def few_shots(pairs: list[CorpusPair] | None = None, *, limit: int = 20) -> str:
     """Data/empty pairs as prompt-ready Q -> SQL examples (refusals are not examples)."""
     pairs = pairs or load()
     examples: list[str] = []

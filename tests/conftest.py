@@ -22,6 +22,8 @@ config.load_env()
 # The read-only analytics login (Grafana/chatbot); ensure_schemas provisions it.
 os.environ.setdefault("DASHBOARD_DB_PASSWORD", "test_dashboard_pw")
 # The assistant's read-only Semantic Layer role (Phase 3), same provisioning path.
+# setdefault: the repo .env's value flows through (helpers resolve config.chatbot_password()),
+# so tests and the live service always agree on the cluster-wide role password.
 os.environ.setdefault("CHATBOT_DB_PASSWORD", "test_chatbot_pw")
 
 # The golden synthetic takeout lives in one place (also used by the eval corpus gate).

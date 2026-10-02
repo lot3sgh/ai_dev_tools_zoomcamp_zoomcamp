@@ -165,7 +165,7 @@ def test_follow_up_sees_the_previous_turns(reset_db, source_dir):
     seen: list[list[dict]] = []
 
     class _Recording(StubProvider):
-        def stream(self, messages):
+        def stream(self, messages, *, session_id=None):
             seen.append(messages)
             return super().stream(messages)
 
@@ -187,7 +187,7 @@ def test_restart_loses_sessions_but_not_the_chat_log(reset_db, source_dir):
     seen: list[list[dict]] = []
 
     class _Recording(StubProvider):
-        def stream(self, messages):
+        def stream(self, messages, *, session_id=None):
             seen.append(messages)
             return super().stream(messages)
 

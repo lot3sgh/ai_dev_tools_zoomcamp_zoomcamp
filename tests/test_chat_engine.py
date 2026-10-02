@@ -23,11 +23,14 @@ def _sync(source_dir):
     return main(["sync", "--source", "local", "--path", str(source_dir)])
 
 
-def _chatbot_conn(chatbot_password: str = "test_chatbot_pw"):
-    from pipeline import config, db
+def _chatbot_conn(chatbot_password: str | None = None):
+    """Connect as the chatbot role; the password follows config (tests then agree with the
+    live service on the cluster-wide role password provisioned by ensure_schemas)."""
+    from pipeline import config
 
+    password = chatbot_password or config.chatbot_password() or "test_chatbot_pw"
     kw = {k: config.db_env()[k] for k in ("dbname", "host", "port")}
-    kw.update(user="chatbot", password=chatbot_password)
+    kw.update(user="chatbot", password=password)
     return psycopg.conninfo.make_conninfo(**kw)
 
 
