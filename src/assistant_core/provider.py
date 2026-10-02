@@ -1,19 +1,30 @@
 """Provider adapter seam: the only boundary the orchestrator talks to.
 
-T1 ships a deterministic StubProvider. The real OpenAI-compatible adapter (OpenCode Go /
-BMF / Ollama) maps provider tool-calling onto the same action protocol so the loop never
-changes. No provider-specific code lives outside this module's adapters.
+T1 ships a deterministic StubProvider; the OpenAI-compatible adapter (OpenCode Go / BMF /
+Ollama, see openai_compat.py) maps the provider onto the same text action protocol so the
+loop never changes. No provider-specific code lives outside this module's adapters.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Protocol
 
 
 class Provider(Protocol):
-    """Text-in, text-out. The orchestrator parses the action protocol."""
+    """Text-in, text-out. The orchestrator drives stream() for every turn:
+
+    - action turns (SQL) are buffered whole and surface as one executed-sql event;
+    - ANSWER/REFUSE turns stream the user-visible text token by token.
+
+    complete() is the non-streaming convenience used by callers that do not relay.
+    """
 
     def complete(self, messages: list[dict]) -> str:
+        ...
+
+    def stream(self, messages: list[dict]) -> Iterator[str]:
+        """Yield the completion in chunks, in order (may be a single giant chunk)."""
         ...
 
     def name(self) -> str:

@@ -6,11 +6,19 @@ Each question may consume a script of turns. A turn is one of:
   {"answer": "text"}             → emits ANSWER:<text>
   {"refuse": "text"}             → emits REFUSE:<text>
 Turns are consumed in order; if the script runs out, the final turn repeats.
+
+complete() and stream() both consume from the same turn script, so a caller can mix
+or use either; stream() shards the turn's text into fixed-size chunks (deterministic).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+def chunk(text: str, size: int = 4) -> list[str]:
+    """Shard text into size-char pieces (the deterministic streaming granularity)."""
+    return [text[i : i + size] for i in range(0, len(text), size)]
 
 
 @dataclass
@@ -21,10 +29,8 @@ class StubProvider:
     def name(self) -> str:
         return self.provider_name
 
-    def complete(self, messages: list[dict]) -> str:
+    def _next_turn(self) -> str:
         script = self.turns or [{"answer": "stub: no script configured"}]
-        # The orchestrator alternates turns per question: call #n uses turn #n if present.
-        # Track calls per session-leg approximately: count _every_ completion.
         n = getattr(self, "_calls", 0)
         self._calls = n + 1
         turn = script[min(n, len(script) - 1)]
@@ -35,3 +41,10 @@ class StubProvider:
         if "refuse" in turn:
             return f"REFUSE:\n{turn['refuse']}"
         return f"ANSWER:\n{turn['answer']}"
+
+    def complete(self, messages: list[dict]) -> str:
+        return self._next_turn()
+
+    def stream(self, messages: list[dict]):
+        for piece in chunk(self._next_turn()):
+            yield piece
