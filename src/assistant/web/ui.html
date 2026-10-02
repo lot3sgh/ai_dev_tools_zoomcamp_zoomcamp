@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Health Assistant</title>
+<!-- Single self-contained page: no build step, no framework, no external assets.
+     Works from a phone browser on the LAN; the chat endpoint is POST + SSE, so the
+     stream is consumed with fetch + ReadableStream (EventSource is GET-only). -->
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e8eaf0;
+          --muted:#9aa3b2; --accent:#4f8cff; --ok:#3ddc84; --warn:#ffb020; --err:#ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 16px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex;
+           align-items: baseline; gap: 10px; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #offline { display: none; background: #3a2a12; color: var(--warn); padding: 8px 16px;
+             font-size: 13px; border-bottom: 1px solid var(--line); }
+  #offline.on { display: block; }
+  main { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 88%; padding: 10px 12px; border-radius: 14px; white-space: pre-wrap;
+         word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: #1f3a6b; }
+  .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); }
+  .msg .cursor { display: inline-block; width: 7px; height: 16px; background: var(--accent);
+                 vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted);
+          margin-top: 6px; }
+  .badge { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge.answered { background: #12351f; color: var(--ok); }
+  .badge.refused { background: #3a2a12; color: var(--warn); }
+  .badge.error { background: #3a1212; color: var(--err); }
+  .sqlchip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+             background: #10141c; border: 1px solid var(--line); border-radius: 8px;
+             padding: 4px 8px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .thumbs button { background: none; border: 1px solid var(--line); color: var(--muted);
+                   border-radius: 8px; padding: 2px 8px; cursor: pointer; font-size: 13px; }
+  .thumbs button.on { border-color: var(--accent); color: var(--accent); }
+  .thumbs button:disabled { opacity: .4; cursor: default; }
+  footer { border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 8px;
+           background: var(--panel); }
+  footer input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+                 border-radius: 10px; padding: 11px 12px; font-size: 16px; }
+  footer input:focus { outline: none; border-color: var(--accent); }
+  footer button { background: var(--accent); border: 0; color: white; border-radius: 10px;
+                  padding: 0 18px; font-size: 16px; font-weight: 600; }
+  footer button:disabled { opacity: .5; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Health Assistant</h1>
+  <span class="sub">text-to-SQL over your health data · LAN only</span>
+</header>
+<div id="offline"></div>
+<main id="chat"></main>
+<footer>
+  <input id="q" type="text" placeholder="e.g. how was my sleep last night?" autocomplete="off" aria-label="Question">
+  <button id="send">Ask</button>
+</footer>
+<script>
+"use strict";
+(function () {
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("q");
+  const send = document.getElementById("send");
+  const offline = document.getElementById("offline");
+  const SESSION_KEY = "health-assistant-session";
+  const sessionId = localStorage.getItem(SESSION_KEY) || ("s-" + Math.random().toString(36).slice(2, 10));
+  localStorage.setItem(SESSION_KEY, sessionId);
+  let busy = false;
+
+  function bubble(kind, text) {
+    const el = document.createElement("div");
+    el.className = "msg " + kind;
+    el.textContent = text;
+    chat.appendChild(el);
+    chat.scrollTop = chat.scrollHeight;
+    return el;
+  }
+
+  function chip(text) {
+    const el = document.createElement("div");
+    el.className = "sqlchip";
+    el.textContent = text;
+    chat.appendChild(el);
+    return el;
+  }
+
+  function metaLine(logId, outcome) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "meta";
+    const badge = document.createElement("span");
+    badge.className = "badge " + (outcome || "answered");
+    badge.textContent = (outcome === "refused" ? "refused"
+                       : outcome === "error" ? "error" : "answered");
+    wrapper.appendChild(badge);
+    if (logId != null && outcome === "answered") {
+      const thumbs = document.createElement("span");
+      thumbs.className = "thumbs";
+      ["up", "down"].forEach(function (dir) {
+        const b = document.createElement("button");
+        b.textContent = dir === "up" ? "👍" : "👎";
+        b.dataset.dir = dir;
+        b.addEventListener("click", function () {
+          fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ log_id: logId, thumbs: dir })
+          }).then(function (r) {
+            if (r.ok) {
+              thumbs.querySelectorAll("button").forEach(function (x) {
+                x.classList.toggle("on", x === b);
+                x.disabled = true;
+              });
+            }
+          });
+        });
+        thumbs.appendChild(b);
+      });
+      wrapper.appendChild(thumbs);
+    }
+    chat.appendChild(wrapper);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function ask(question) {
+    if (busy) return;
+    busy = true;
+    send.disabled = true;
+    bubble("user", question);
+    const answer = bubble("assistant", "");
+    let cursor = document.createElement("span");
+    cursor.className = "cursor";
+    answer.appendChild(cursor);
+    let outcome = null, logId = null, gotOutcome = false;
+
+    try {
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question, session_id: sessionId })
+      });
+      if (resp.status === 503) {
+        const err = await resp.json();
+        offline.textContent = "Assistant offline — " + err.detail;
+        offline.classList.add("on");
+        answer.textContent = "(offline)";
+        return;
+      }
+      offline.classList.remove("on");
+      if (!resp.body) throw new Error("no stream body");
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf("\n\n")) >= 0) {
+          const block = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          handleBlock(block);
+        }
+      }
+      function handleBlock(block) {
+        let ev = null, data = null;
+        block.split("\n").forEach(function (line) {
+          if (line.startsWith("event:")) ev = line.slice(6).trim();
+          else if (line.startsWith("data:")) {
+            try { data = JSON.parse(line.slice(5).trim()); } catch (e) {}
+          }
+        });
+        if (ev === "token" && data) {
+          cursor.remove();
+          answer.textContent += data.chunk;
+          cursor = document.createElement("span");
+          cursor.className = "cursor";
+          answer.appendChild(cursor);
+          chat.scrollTop = chat.scrollHeight;
+        } else if (ev === "sql" && data) {
+          chip("⚙ " + data.sql  + "  → " + data.rows + " row" + (data.rows === 1 ? "" : "s")
+               + (data.truncated ? " (truncated)" : "") + (data.repairs ? " [repaired]" : ""));
+        } else if (ev === "outcome" && data) {
+          gotOutcome = true;
+          outcome = data.outcome;
+          logId = data.log_id;
+        }
+      }
+    } catch (err) {
+      outcome = "error";
+      answer.textContent = "Connection error — " + err.message;
+    } finally {
+      cursor.remove();
+      if (gotOutcome) metaLine(logId, outcome);
+      busy = false;
+      send.disabled = false;
+      input.focus();
+    }
+  }
+
+  send.addEventListener("click", function () {
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = "";
+    ask(q);
+  });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") send.click();
+  });
+  input.focus();
+})();
+</script>
+</body>
+</html>

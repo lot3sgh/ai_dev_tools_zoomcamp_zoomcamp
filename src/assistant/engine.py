@@ -101,14 +101,19 @@ def answer_question(
 _OUTCOME = {"answer": "answered", "refusal": "refused", "error": "error"}
 
 
+def outcome_kind(out: Outcome) -> str:
+    """The Chat Log/SSE outcome label for an Outcome (answered | refused | error)."""
+    if out.text is not None:
+        return _OUTCOME["answer"]
+    if out.refusal is not None:
+        return _OUTCOME["refusal"]
+    return _OUTCOME["error"]
+
+
 def log_exchange(session_id: str, provider_name: str, question: str, out: Outcome) -> int:
     """Record one exchange in the Chat Log; returns the row id (thumbs target)."""
-    if out.text is not None:
-        outcome, detail = _OUTCOME["answer"], None
-    elif out.refusal is not None:
-        outcome, detail = _OUTCOME["refusal"], out.refusal
-    else:
-        outcome, detail = _OUTCOME["error"], out.error
+    outcome = outcome_kind(out)
+    detail = out.refusal if outcome == "refused" else out.error
     with db.connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
