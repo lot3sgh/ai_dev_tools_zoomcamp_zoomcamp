@@ -8,11 +8,15 @@ dependencies = [
     "google-api-python-client>=2.150",
     "google-auth>=2.37",
     "psycopg[binary]>=3.2",
+    # The Health Assistant service (Phase 3 ticket 02): LAN-only FastAPI + SSE chat.
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
 ]
 
 [project.optional-dependencies]
 dev = [
     "health-assistant-core",
+    "httpx>=0.27",          # FastAPI TestClient transport (dev seam for the SSE tests)
     "mypy>=1.13",
     "pytest>=8.3",
 ]

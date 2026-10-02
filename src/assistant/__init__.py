@@ -6,7 +6,10 @@ package registers the run_health_query tool over the Semantic Layer and owns the
 
 from assistant.engine import (
     answer_question,
+    answer_stream,
     chatbot_conninfo,
+    log_exchange,
+    make_orchestrator,
     make_tool,
     register_health_tools,
 )
@@ -15,7 +18,10 @@ from assistant.tool import RunHealthQuery
 __all__ = [
     "RunHealthQuery",
     "answer_question",
+    "answer_stream",
     "chatbot_conninfo",
+    "log_exchange",
+    "make_orchestrator",
     "make_tool",
     "register_health_tools",
 ]

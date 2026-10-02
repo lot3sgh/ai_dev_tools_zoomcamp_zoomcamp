@@ -63,6 +63,28 @@ def chatbot_password() -> str | None:
     return os.environ.get("CHATBOT_DB_PASSWORD")
 
 
+def llm_provider() -> str:
+    """Provider label: "stub" selects the deterministic test provider; anything else is the
+    OpenAI-compatible seam selected by LLM_BASE_URL/LLM_MODEL/LLM_API_KEY."""
+    return os.environ.get("LLM_PROVIDER", "").strip()
+
+
+def llm_base_url() -> str | None:
+    """OpenAI-compatible base URL (e.g. Ollama /v1, BMF, the OpenCode gateway)."""
+    value = os.environ.get("LLM_BASE_URL", "").strip()
+    return value or None
+
+
+def llm_model() -> str | None:
+    value = os.environ.get("LLM_MODEL", "").strip()
+    return value or None
+
+
+def llm_api_key() -> str | None:
+    value = os.environ.get("LLM_API_KEY", "").strip()
+    return value or None
+
+
 def sa_key_path() -> Path | None:
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if path:
