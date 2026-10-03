@@ -10,6 +10,7 @@
 | [SPEC.md](SPEC.md) | the original Phase-1 product spec (pipeline/ingest) |
 | [dashboard.md](dashboard.md) | the Grafana layer (Phase 0b) |
 | [ops/diagnosis.md](../ops/diagnosis.md) | operational probes + current outputs |
+| [study-guide.md](study-guide.md) | this study guide — architecture map + learning ladder |
 | [security/audit.md](../security/audit.md) | gitleaks / pip-audit / bandit artifacts + PR audit record |
 | [security/policy.md](../security/policy.md) | AI tool & data policy |
 
