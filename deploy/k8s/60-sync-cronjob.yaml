@@ -1,0 +1,56 @@
+# Daily Drive sync: the containerized sync CLI (Dockerfile), as a CronJob.
+# Equivalent to deploy/health-sync.timer + `pipeline sync --source drive`.
+# The Service Account key is mounted from the health-pipeline-sa-key Secret at
+# /secrets/sa-key.json; GOOGLE_APPLICATION_CREDENTIALS points at it.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: health-pipeline-sync
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-sync
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  schedule: "15 6 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 10800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: health-pipeline-sync
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 10001
+          containers:
+            - name: sync
+              image: health-pipeline-sync:latest
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - configMapRef: {name: health-pipeline-config}
+                - secretRef: {name: health-pipeline-secrets}
+              env:
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: /secrets/sa-key.json
+              volumeMounts:
+                - name: sa-key
+                  mountPath: /secrets
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "1500m"
+                  memory: "1Gi"
+          volumes:
+            - name: sa-key
+              secret:
+                secretName: health-pipeline-sa-key
+                defaultMode: 0440

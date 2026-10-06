@@ -1,0 +1,106 @@
+# Postgres 16 for the pipeline's bronze/silver/gold + pipeline.chat_log.
+# Single replica on the node's local-path provisioner; data survives pod restarts
+# and reschedules. See deploy/k8s/README.md for the backup CronJob.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-db
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  selector:
+    app.kubernetes.io/name: health-pipeline-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: health-pipeline-db
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-db
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: health-pipeline-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: health-pipeline-db
+    spec:
+      # postgres:16-alpine runs as uid/gid 70; the local-path volume is chowned to
+      # this group so PGDATA is writable without a root entrypoint.
+      securityContext:
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef: {name: health-pipeline-config, key: POSTGRES_DB}
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef: {name: health-pipeline-config, key: POSTGRES_USER}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: health-pipeline-secrets, key: POSTGRES_PASSWORD}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            # k8s defaults /dev/shm to 64MB; Postgres parallel queries/VACUUM need more.
+            - name: dshm
+              mountPath: /dev/shm
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1Gi"
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi

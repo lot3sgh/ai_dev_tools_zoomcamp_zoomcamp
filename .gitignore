@@ -29,5 +29,8 @@ data/
 # Nightly pg_dump backups (deploy/backup.sh)
 backups/
 
+# Locally generated cluster secrets (deploy/k8s/deploy.sh); never committed
+.k8s-secrets.env
+
 # Review/explainer artifacts (lavish)
 .lavish/

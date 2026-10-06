@@ -1,0 +1,22 @@
+# Non-secret runtime configuration for the whole stack.
+# The deploy script (deploy/k8s/deploy.sh) creates/refreshes this ConfigMap from
+# the repo's .env, so these values are the documented defaults for a fresh deploy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-pipeline-config
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/part-of: health-pipeline
+data:
+  POSTGRES_DB: "health_pipeline"
+  POSTGRES_USER: "pipeline"
+  PGHOST: "db"
+  PGPORT: "5432"
+  GRAFANA_ADMIN_USER: "admin"
+  # LLM provider seam (see docs/deploy.md privacy statement). Empty = assistant
+  # offline: the page still serves, /api/chat returns 503. Set these three to
+  # point at Ollama (local privacy default) or an OpenAI-compatible gateway.
+  LLM_PROVIDER: ""
+  LLM_BASE_URL: ""
+  LLM_MODEL: ""

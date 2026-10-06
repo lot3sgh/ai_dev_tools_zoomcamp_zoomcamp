@@ -1,0 +1,66 @@
+# The Health Assistant chat service: FastAPI + SSE, single-page UI served at /.
+# LAN-only by design — exposed through the Traefik ingress, never a LoadBalancer
+# and never port-forwarded. No provider configured = page serves, /api/chat 503s.
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-chat
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  selector:
+    app.kubernetes.io/name: health-pipeline-chat
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-pipeline-chat
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-chat
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: health-pipeline-chat
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: health-pipeline-chat
+    spec:
+      containers:
+        - name: chat
+          image: health-pipeline-chat:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef: {name: health-pipeline-config}
+            - secretRef: {name: health-pipeline-secrets}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"

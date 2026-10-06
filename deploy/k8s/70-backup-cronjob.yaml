@@ -1,0 +1,85 @@
+# Nightly full pg_dump -> gzip into a local-path volume with retention.
+# The k8s analogue of deploy/health-backup.timer + backup.sh. "Data is data":
+# the dump includes pipeline.chat_log (the assistant's audit trail).
+# Off-box shipping is intentionally left to the operator (rclone/rsync) — see
+# deploy/k8s/README.md for the restore drill.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: health-pipeline-backups
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-backup
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: health-pipeline-backup
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-backup
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  schedule: "10 3 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: health-pipeline-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dump
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+                  OUT="/backups/health-${STAMP}.sql.gz"
+                  echo "backup: dump -> ${OUT}"
+                  pg_dump -h "$PGHOST" -p "$PGPORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                    | gzip > "$OUT"
+                  KEEP="${BACKUP_KEEP:-1}"
+                  ls -1t /backups/health-* 2>/dev/null | tail -n +$((KEEP + 1)) \
+                    | while read -r old; do echo "backup: pruning ${old}"; rm -f "$old"; done
+                  echo "backup: ok (${OUT})"
+              envFrom:
+                - configMapRef: {name: health-pipeline-config}
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef: {name: health-pipeline-secrets, key: POSTGRES_PASSWORD}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: {name: health-pipeline-secrets, key: POSTGRES_PASSWORD}
+                - name: BACKUP_KEEP
+                  value: "1"
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "512Mi"
+          volumes:
+            - name: backups
+              persistentVolumeClaim: {claimName: health-pipeline-backups}

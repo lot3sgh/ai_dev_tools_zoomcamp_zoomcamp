@@ -1,0 +1,130 @@
+# Grafana over the gold views, using the read-only `dashboard` role.
+# Provisioning assets come from the repo (grafana/):
+#   - datasources: url db:5432, user dashboard, password ${DASHBOARD_DB_PASSWORD}
+#   - dashboards:  health.json mounted at /var/lib/grafana/dashboards
+#   - alerting:    stale-sync rule
+# deploy.sh materializes the three ConfigMaps from those files, so they never drift.
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-grafana
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  selector:
+    app.kubernetes.io/name: health-pipeline-grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-pipeline-grafana
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/name: health-pipeline-grafana
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: health-pipeline-grafana
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: health-pipeline-grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: grafana/grafana-oss:11.6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                configMapKeyRef: {name: health-pipeline-config, key: GRAFANA_ADMIN_USER}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: health-pipeline-secrets, key: GRAFANA_ADMIN_PASSWORD}
+            - name: GF_AUTH_LOGIN_MAX_ATTEMPTS
+              value: "10"
+            # Served behind Traefik at /grafana (see 50-ingress.yaml).
+            - name: GF_SERVER_ROOT_URL
+              value: "%(protocol)s://%(domain)s/grafana"
+            - name: GF_SERVER_SERVE_FROM_SUB_PATH
+              value: "true"
+            # datasources.yml interpolates ${POSTGRES_DB} and ${DASHBOARD_DB_PASSWORD}.
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef: {name: health-pipeline-config, key: POSTGRES_DB}
+            - name: DASHBOARD_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: health-pipeline-secrets, key: DASHBOARD_DB_PASSWORD}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yml
+              subPath: datasources.yml
+              readOnly: true
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards/dashboard.yml
+              subPath: dashboard.yml
+              readOnly: true
+            - name: alerting
+              mountPath: /etc/grafana/provisioning/alerting/stale-sync.yaml
+              subPath: stale-sync.yaml
+              readOnly: true
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+      volumes:
+        - name: datasources
+          configMap: {name: health-pipeline-grafana-datasources}
+        - name: dashboards-provider
+          configMap: {name: health-pipeline-grafana-dashboards-provider}
+        - name: alerting
+          configMap: {name: health-pipeline-grafana-alerting}
+        - name: dashboards
+          configMap: {name: health-pipeline-grafana-dashboards}
+        - name: data
+          persistentVolumeClaim: {claimName: health-pipeline-grafana-data}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: health-pipeline-grafana-data
+  namespace: health-pipeline
+  labels:
+    app.kubernetes.io/part-of: health-pipeline
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
