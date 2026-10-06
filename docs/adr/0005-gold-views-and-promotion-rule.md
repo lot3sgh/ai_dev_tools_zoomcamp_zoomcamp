@@ -1,6 +1,9 @@
 # Gold is a SQL view layer; bronze→silver promotion follows a rule
 
-Status: accepted (landed in ROADMAP Phases 0a/0b, 2026-10-01).
+Status: accepted (landed in ROADMAP Phases 0a/0b, 2026-10-01). Decision #1 is
+superseded by ADR-0007 (2026-10-06): the three aggregate gold objects are now
+materialized views, refreshed after each sync; `freshness` stays a live view.
+Decision #2 (the promotion rule) stands.
 
 Two related decisions from the home-lab roadmap's guardrails, now written down where the code can cite them.
 

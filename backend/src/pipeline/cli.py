@@ -50,6 +50,7 @@ def run_sync(args: argparse.Namespace) -> int:
 
     db.ensure_schemas()
     summary = state.sync(source, process)
+    db.refresh_gold()  # the gold views are materialized; rebuild them from the new silver
 
     print(f"Takeouts processed: {len(summary.processed)}"
           f" | skipped: {len(summary.skipped)} | failed: {len(summary.failed)}")

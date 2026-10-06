@@ -104,3 +104,31 @@ def test_freshness_mirrors_ledger_and_audit(reset_db, source_dir):
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM gold.freshness")[0][0] == 1
         assert _q(conn, "SELECT rejected_rows FROM gold.freshness")[0][0] == 6
+
+def test_gold_read_contract_is_materialized_and_refreshes(reset_db, source_dir):
+    """The heavy gold objects are materialized (refreshed after sync); freshness stays a view."""
+    from pipeline import db
+    from tests.conftest import make_zip
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        kinds = dict(_q(conn, "SELECT relname, relkind FROM pg_class c "
+                              "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                              "WHERE n.nspname = 'gold'"))
+        assert kinds["daily_health"] == "m"
+        assert kinds["sleep_summary"] == "m"
+        assert kinds["activity_trends"] == "m"
+        assert kinds["freshness"] == "v"
+        # populated by the refresh that runs at the end of the sync
+        assert _q(conn, "SELECT count(*) FROM gold.daily_health")[0][0] == 7
+    # a later sync changes the underlying silver; the refresh makes it visible
+    make_zip(
+        source_dir / "takeout-extra.zip",
+        {"Takeout/Google Health/Stress Score/stress.csv":
+            "date,stress_score,sleep_points,responsiveness_points,exertion_points,status\n"
+            "2026-10-01T00:00:00,60,10,20,15,CALM\n"},
+    )
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        assert _q(conn, "SELECT stress_score FROM gold.daily_health "
+                        "WHERE date = '2026-10-01'")[0][0] == 60

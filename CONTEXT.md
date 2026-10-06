@@ -29,7 +29,7 @@ A typed Postgres table in the `silver` schema derived from a curated bronze fami
 _Avoid_: Curated table, gold table, model table
 
 **Gold Table**:
-The read contract layer (Phase 0b): four SQL views in the `gold` schema — `daily_health`, `sleep_summary`, `activity_trends`, `freshness` — served to Grafana (and any future consumer) through the read-only `dashboard` role. Deliberately views, not materialized tables: no mart tooling (no dbt; ADR-0004 reasoning). Night metrics key to the date of the night they belong to.
+The read contract layer (Phase 0b): four objects in the `gold` schema — `daily_health`, `sleep_summary`, `activity_trends` (materialized views, rebuilt by `refresh_gold()` at the end of every sync) and `freshness` (a live view over the sync ledger) — served to Grafana (and any future consumer) through the read-only `dashboard` role. No mart tooling (no dbt; ADR-0004/ADR-0007). Night metrics key to the date of the night they belong to.
 _Avoid_: Report, dashboard table
 
 **Semantic Layer**:

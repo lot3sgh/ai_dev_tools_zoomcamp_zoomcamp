@@ -163,10 +163,29 @@ CREATE TABLE IF NOT EXISTS silver.activity (
     _source_file      TEXT
 );
 
--- Gold: live read contract over silver (Phase 0b). UTC-day grain; night metrics
--- (sleep/hrv/temperature) key to the date of the night they belong to.
+-- Gold: materialized read contract over silver (Phase 0b). UTC-day grain; night metrics
+-- (sleep/hrv/temperature) key to the date of the night they belong to. Materialized so the
+-- assistant's reads are O(rows in the view), not O(10M activity rows); pipeline.db.refresh_gold
+-- rebuilds them after every sync. gold.freshness stays a live view (operational, must reflect
+-- the latest ledger). The DO block drops any prior view/matview so definition changes apply.
+DO $do$
+DECLARE r record; kw text;
+BEGIN
+  FOR r IN
+    SELECT c.relname, c.relkind
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'gold'
+      AND c.relname IN ('daily_health', 'sleep_summary', 'activity_trends')
+  LOOP
+    kw := CASE r.relkind WHEN 'm' THEN 'DROP MATERIALIZED VIEW ' WHEN 'v' THEN 'DROP VIEW ' END;
+    IF kw IS NOT NULL THEN
+      EXECUTE kw || 'gold.' || quote_ident(r.relname);
+    END IF;
+  END LOOP;
+END
+$do$;
 
-CREATE OR REPLACE VIEW gold.daily_health AS
+CREATE MATERIALIZED VIEW gold.daily_health AS
 WITH days AS (
     SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day FROM silver.activity
     UNION SELECT date FROM silver.stress
@@ -195,7 +214,9 @@ LEFT JOIN hrv_day hr ON hr.day = d.day
 LEFT JOIN spo2_day sp ON sp.day = d.day
 LEFT JOIN temp_day tp ON tp.day = d.day;
 
-CREATE OR REPLACE VIEW gold.sleep_summary AS
+CREATE UNIQUE INDEX IF NOT EXISTS daily_health_date_idx ON gold.daily_health (date);
+
+CREATE MATERIALIZED VIEW gold.sleep_summary AS
 WITH nights AS (
     SELECT DISTINCT ON (("timestamp" AT TIME ZONE 'UTC')::date)
            ("timestamp" AT TIME ZONE 'UTC')::date AS night,
@@ -226,7 +247,9 @@ FROM nights n
 LEFT JOIN hrv_night h ON h.night = n.night
 LEFT JOIN temp_night t ON t.night = n.night;
 
-CREATE OR REPLACE VIEW gold.activity_trends AS
+CREATE UNIQUE INDEX IF NOT EXISTS sleep_summary_night_idx ON gold.sleep_summary (night);
+
+CREATE MATERIALIZED VIEW gold.activity_trends AS
 WITH steps AS (
     SELECT date_trunc('week', "timestamp" AT TIME ZONE 'UTC')::date AS week_start, sum(steps) AS steps
     FROM silver.activity GROUP BY 1
@@ -243,6 +266,8 @@ SELECT COALESCE(s.week_start, a.week_start) AS week_start,
        COALESCE(a.active_days, 0) AS active_days
 FROM steps s
 FULL OUTER JOIN azm a ON s.week_start = a.week_start;
+
+CREATE UNIQUE INDEX IF NOT EXISTS activity_trends_week_idx ON gold.activity_trends (week_start);
 
 CREATE OR REPLACE VIEW gold.freshness AS
 SELECT p.name AS takeout,
@@ -272,18 +297,18 @@ CREATE TABLE IF NOT EXISTS pipeline.chat_log (
 
 -- Semantic Layer grain documentation: the model-facing contract lives HERE, versioned with
 -- the DDL, so the assistant's knowledge can never drift from the schema (Phase 3 spec).
-COMMENT ON VIEW gold.daily_health IS
+COMMENT ON MATERIALIZED VIEW gold.daily_health IS
   'One row per UTC day that has any health data (day = the UTC date). sleep_score is the max '
   'overall_score of the night that started that day; stress_score is max stress per day; '
   'steps and azm_minutes are daily sums; avg_hrv_rmssd averages hrv.rmssd for the day; '
   'avg_spo2 averages spo2.value (NULLs excluded); nightly_temperature is the night summary '
   'temperature of the night starting that day.';
-COMMENT ON VIEW gold.sleep_summary IS
+COMMENT ON MATERIALIZED VIEW gold.sleep_summary IS
   'One row per night. night = the date the sleep STARTED (a night belongs to the day it '
   'started, not the day it ended). overall_score is the latest sleep score entry that night; '
   'rmssd/coverage join the same night from hrv; nightly_temperature from temperature. '
   'rolling_7d_score is the 7-row trailing average of overall_score over nights.';
-COMMENT ON VIEW gold.activity_trends IS
+COMMENT ON MATERIALIZED VIEW gold.activity_trends IS
   'One row per ISO week (week_start = Monday). steps and azm_minutes are weekly sums; '
   'active_days counts distinct days with AZM data.';
 COMMENT ON VIEW gold.freshness IS
@@ -341,6 +366,23 @@ def provision_chatbot_role(conn: psycopg.Connection, password: str) -> None:
                 "    gold.freshness, silver.sleep_score, silver.device, silver.profile TO chatbot;"
             ).format(pw=sql.Literal(password))
         )
+
+
+def refresh_gold() -> None:
+    """Rebuild the materialized gold views after a sync (definitions live in DDL).
+
+    Cheap to run on the small result sets (hundreds of rows); the aggregation cost is paid
+    here, once per sync, instead of on every assistant query.
+    """
+    with connect() as conn:
+        with conn.cursor() as cur:
+            for name in ("daily_health", "sleep_summary", "activity_trends"):
+                cur.execute(
+                    sql.SQL("REFRESH MATERIALIZED VIEW gold.{}").format(
+                        sql.Identifier(name)
+                    )
+                )
+        conn.commit()
 
 
 def ensure_schemas() -> None:
