@@ -44,7 +44,17 @@ def _i(v: Any) -> int | None:
     try:
         return int(s)
     except ValueError:
+        pass
+    # The Google Health export writes some nominally-integer columns as floats
+    # ("81.0"); accept them only when they are whole numbers. A genuine
+    # non-number ("BADROW") still lands in silver.rejected_rows.
+    try:
+        d = Decimal(s)
+    except InvalidOperation:
         raise _Rejected(f"not an integer: {s!r}")
+    if d == d.to_integral_value():
+        return int(d)
+    raise _Rejected(f"not an integer: {s!r}")
 
 
 def _f(v: Any) -> Decimal | None:
@@ -82,6 +92,12 @@ def _d(v: Any) -> date | None:
         return None
     try:
         return date.fromisoformat(s)
+    except ValueError:
+        pass
+    # The Stress Score export carries a midnight datetime ("2024-07-27T00:00:00")
+    # in its date column; take the calendar date.
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
     except ValueError:
         raise _Rejected(f"not a date: {s!r}")
 
@@ -299,103 +315,112 @@ def _silver_columns(conn: psycopg.Connection, table: str) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+_FLUSH_EVERY = 5000  # rows per executemany batch; bounds memory on multi-million-row families
+
+
+def _insert_statement(
+    table: str, silver_cols: list[str], key_cols: list[str] | None
+) -> sql.Composed:
+    """INSERT for a silver table (upsert when the family has a natural key)."""
+    if key_cols:
+        # keyed families: upsert on the natural key so changed values update in place
+        update_cols = [c for c in silver_cols if c not in key_cols]
+        return sql.SQL(
+            "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
+            " ON CONFLICT ({keys}) DO UPDATE SET {updates}"
+        ).format(
+            table=sql.Identifier(table),
+            cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
+            placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in silver_cols),
+            keys=sql.SQL(", ").join(sql.Identifier(c) for c in key_cols),
+            updates=sql.SQL(", ").join(
+                sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(c), sql.Identifier(c))
+                for c in update_cols
+            ),
+        )
+    # append families have no defensible natural key; the delete-by-source-file keeps
+    # reruns idempotent without inventing a key that would silently collapse duplicates
+    return sql.SQL(
+        "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
+    ).format(
+        table=sql.Identifier(table),
+        cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
+        placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in silver_cols),
+    )
+
+
+_REJECT_SQL = sql.SQL(
+    "INSERT INTO silver.rejected_rows"
+    " (family, source_file, takeout, row_text, reason)"
+    " SELECT %s, %s, %s, %s, %s"
+    " WHERE NOT EXISTS ("
+    "   SELECT 1 FROM silver.rejected_rows"
+    "   WHERE family = %s AND source_file = %s"
+    "     AND row_text = %s AND reason = %s)"
+)
+
+
 def build_family(
     conn: psycopg.Connection, takeout: str, source_file: str, table: str, family: str
 ) -> dict[str, int]:
-    """Type one bronze family's rows (for one source file) into a silver table."""
+    """Type one bronze family's rows (for one source file) into a silver table.
+
+    Bronze is read through a server-side cursor and rows are flushed in batches, so a
+    single multi-million-row family (real takeouts) never has to fit in memory.
+    """
     key_cols, builder = _BUILDERS[table]
     stats = {"written": 0, "rejected": 0}
     cols = _bronze_columns(conn, family)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            sql.SQL("DELETE FROM silver.{} WHERE _source_file = %s").format(
-                sql.Identifier(table)),
-            (source_file,),
-        )  # scoped cleanup so re-runs don't leave stale rows
-        cur.execute(
-            sql.SQL("SELECT {} FROM bronze.{} WHERE _source_file = %s").format(
-                sql.SQL(", ").join(sql.Identifier(c) for c in cols),
-                sql.Identifier(family),
-            ),
-            (source_file,),
-        )
-        bronze_rows = cur.fetchall()
-
     col_index = {c: i for i, c in enumerate(cols)}
     silver_cols = _silver_columns(conn, table)
+    insert_stmt = _insert_statement(table, silver_cols, key_cols)
+    select_stmt = sql.SQL("SELECT {} FROM bronze.{} WHERE _source_file = %s").format(
+        sql.SQL(", ").join(sql.Identifier(c) for c in cols),
+        sql.Identifier(family),
+    )
+
     prepared: list[tuple] = []
+    rejects: list[tuple] = []
 
-    with conn.cursor() as cur:
-        for raw in bronze_rows:
-            row = {c: raw[col_index[c]] for c in cols}
-            try:
-                values, _keys = builder(row, takeout, source_file)
-                prepared.append(values)
-            except _Skip:
-                continue  # deliberately-unmapped row (stays bronze-only), not a failure
-            except _Rejected as exc:
-                cur.execute(
-                    sql.SQL(
-                        "INSERT INTO silver.rejected_rows"
-                        " (family, source_file, takeout, row_text, reason)"
-                        " SELECT %s, %s, %s, %s, %s"
-                        " WHERE NOT EXISTS ("
-                        "   SELECT 1 FROM silver.rejected_rows"
-                        "   WHERE family = %s AND source_file = %s"
-                        "     AND row_text = %s AND reason = %s)"
-                    ),
-                    (
-                        family,
-                        source_file,
-                        takeout,
-                        ",".join(str(v) for v in row.values()),
-                        exc.reason,
-                        family,
-                        source_file,
-                        ",".join(str(v) for v in row.values()),
-                        exc.reason,
-                    ),
-                )
-                stats["rejected"] += 1
+    def flush() -> None:
+        with conn.cursor() as cur:
+            if prepared:
+                cur.executemany(insert_stmt, prepared)
+                stats["written"] += len(prepared)
+                prepared.clear()
+            if rejects:
+                cur.executemany(_REJECT_SQL, rejects)
+                rejects.clear()
 
-        if prepared:
-            if key_cols:
-                # keyed families: upsert on the natural key so changed values update in place
-                update_cols = [c for c in silver_cols if c not in key_cols]
-                insert_stmt = sql.SQL(
-                    "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
-                    " ON CONFLICT ({keys}) DO UPDATE SET {updates}"
-                ).format(
-                    table=sql.Identifier(table),
-                    cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
-                    placeholders=sql.SQL(", ").join(
-                        sql.Placeholder() for _ in silver_cols
-                    ),
-                    keys=sql.SQL(", ").join(sql.Identifier(c) for c in key_cols),
-                    updates=sql.SQL(", ").join(
-                        sql.SQL("{} = EXCLUDED.{}").format(
-                            sql.Identifier(c), sql.Identifier(c)
-                        )
-                        for c in update_cols
-                    ),
-                )
-            else:
-                # append families have no defensible natural key; the delete-by-source-file
-                # above keeps reruns idempotent without inventing a key that would
-                # silently collapse legitimate duplicate rows
-                insert_stmt = sql.SQL(
-                    "INSERT INTO silver.{table} ({cols}) VALUES ({placeholders})"
-                ).format(
-                    table=sql.Identifier(table),
-                    cols=sql.SQL(", ").join(sql.Identifier(c) for c in silver_cols),
-                    placeholders=sql.SQL(", ").join(
-                        sql.Placeholder() for _ in silver_cols
-                    ),
-                )
-            cur.executemany(insert_stmt, prepared)
-            stats["written"] += len(prepared)
-    conn.commit()
+    # One transaction block: the scoped DELETE makes a rerun idempotent, and the
+    # server-side cursor requires a transaction (the connection is autocommit).
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL("DELETE FROM silver.{} WHERE _source_file = %s").format(
+                    sql.Identifier(table)),
+                (source_file,),
+            )  # scoped cleanup so re-runs don't leave stale rows
+        with conn.cursor(name=f"bronze_{family}") as stream:
+            stream.itersize = _FLUSH_EVERY
+            stream.execute(select_stmt, (source_file,))
+            for raw in stream:
+                row = {c: raw[col_index[c]] for c in cols}
+                try:
+                    values, _keys = builder(row, takeout, source_file)
+                    prepared.append(values)
+                except _Skip:
+                    continue  # deliberately-unmapped row (stays bronze-only), not a failure
+                except _Rejected as exc:
+                    row_text = ",".join(str(v) for v in row.values())
+                    rejects.append((
+                        family, source_file, takeout, row_text, exc.reason,
+                        family, source_file, row_text, exc.reason,
+                    ))
+                    stats["rejected"] += 1
+                if len(prepared) + len(rejects) >= _FLUSH_EVERY:
+                    flush()
+        flush()
     return stats
 
 

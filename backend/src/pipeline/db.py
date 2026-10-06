@@ -168,21 +168,21 @@ CREATE TABLE IF NOT EXISTS silver.activity (
 
 CREATE OR REPLACE VIEW gold.daily_health AS
 WITH days AS (
-    SELECT timestamp::date AS day FROM silver.activity
+    SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day FROM silver.activity
     UNION SELECT date FROM silver.stress
-    UNION SELECT date_time::date FROM silver.active_zone_minutes
-    UNION SELECT timestamp::date FROM silver.sleep_score
-    UNION SELECT timestamp::date FROM silver.spo2
-    UNION SELECT timestamp::date FROM silver.hrv
-    UNION SELECT sleep_start::date FROM silver.temperature
+    UNION SELECT ("date_time" AT TIME ZONE 'UTC')::date FROM silver.active_zone_minutes
+    UNION SELECT ("timestamp" AT TIME ZONE 'UTC')::date FROM silver.sleep_score
+    UNION SELECT ("timestamp" AT TIME ZONE 'UTC')::date FROM silver.spo2
+    UNION SELECT ("timestamp" AT TIME ZONE 'UTC')::date FROM silver.hrv
+    UNION SELECT ("sleep_start" AT TIME ZONE 'UTC')::date FROM silver.temperature
 ),
-sleep_day AS (SELECT timestamp::date AS day, max(overall_score) AS sleep_score FROM silver.sleep_score GROUP BY 1),
+sleep_day AS (SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day, max(overall_score) AS sleep_score FROM silver.sleep_score GROUP BY 1),
 stress_day AS (SELECT date AS day, max(stress_score) AS stress_score FROM silver.stress GROUP BY 1),
-steps_day AS (SELECT timestamp::date AS day, sum(steps) AS steps FROM silver.activity GROUP BY 1),
-azm_day AS (SELECT date_time::date AS day, sum(total_minutes) AS azm_minutes FROM silver.active_zone_minutes GROUP BY 1),
-hrv_day AS (SELECT timestamp::date AS day, avg(rmssd) AS avg_hrv_rmssd FROM silver.hrv GROUP BY 1),
-spo2_day AS (SELECT timestamp::date AS day, avg(value) AS avg_spo2 FROM silver.spo2 WHERE value IS NOT NULL GROUP BY 1),
-temp_day AS (SELECT sleep_start::date AS day, max(nightly_temperature) AS nightly_temperature FROM silver.temperature GROUP BY 1)
+steps_day AS (SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day, sum(steps) AS steps FROM silver.activity GROUP BY 1),
+azm_day AS (SELECT ("date_time" AT TIME ZONE 'UTC')::date AS day, sum(total_minutes) AS azm_minutes FROM silver.active_zone_minutes GROUP BY 1),
+hrv_day AS (SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day, avg(rmssd) AS avg_hrv_rmssd FROM silver.hrv GROUP BY 1),
+spo2_day AS (SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS day, avg(value) AS avg_spo2 FROM silver.spo2 WHERE value IS NOT NULL GROUP BY 1),
+temp_day AS (SELECT ("sleep_start" AT TIME ZONE 'UTC')::date AS day, max(nightly_temperature) AS nightly_temperature FROM silver.temperature GROUP BY 1)
 SELECT d.day AS date,
        sl.sleep_score, st.stress_score, pd.steps, az.azm_minutes,
        hr.avg_hrv_rmssd, sp.avg_spo2, tp.nightly_temperature
@@ -197,18 +197,18 @@ LEFT JOIN temp_day tp ON tp.day = d.day;
 
 CREATE OR REPLACE VIEW gold.sleep_summary AS
 WITH nights AS (
-    SELECT DISTINCT ON (timestamp::date)
-           timestamp::date AS night,
+    SELECT DISTINCT ON (("timestamp" AT TIME ZONE 'UTC')::date)
+           ("timestamp" AT TIME ZONE 'UTC')::date AS night,
            overall_score,
            deep_sleep_in_minutes,
            resting_heart_rate,
            restlessness
     FROM silver.sleep_score
-    ORDER BY timestamp::date, timestamp DESC
+    ORDER BY ("timestamp" AT TIME ZONE 'UTC')::date, timestamp DESC
 ),
-hrv_night AS (SELECT timestamp::date AS night, avg(rmssd) AS rmssd, avg(coverage) AS coverage
+hrv_night AS (SELECT ("timestamp" AT TIME ZONE 'UTC')::date AS night, avg(rmssd) AS rmssd, avg(coverage) AS coverage
                FROM silver.hrv GROUP BY 1),
-temp_night AS (SELECT sleep_start::date AS night,
+temp_night AS (SELECT ("sleep_start" AT TIME ZONE 'UTC')::date AS night,
                max(nightly_temperature) AS nightly_temperature,
                max(baseline_relative_nightly_standard_deviation) AS temperature_deviation
                FROM silver.temperature GROUP BY 1)
@@ -228,13 +228,13 @@ LEFT JOIN temp_night t ON t.night = n.night;
 
 CREATE OR REPLACE VIEW gold.activity_trends AS
 WITH steps AS (
-    SELECT date_trunc('week', timestamp)::date AS week_start, sum(steps) AS steps
+    SELECT date_trunc('week', "timestamp" AT TIME ZONE 'UTC')::date AS week_start, sum(steps) AS steps
     FROM silver.activity GROUP BY 1
 ),
 azm AS (
-    SELECT date_trunc('week', date_time)::date AS week_start,
+    SELECT date_trunc('week', "date_time" AT TIME ZONE 'UTC')::date AS week_start,
            sum(total_minutes) AS azm_minutes,
-           count(DISTINCT date_time::date) AS active_days
+           count(DISTINCT ("date_time" AT TIME ZONE 'UTC')::date) AS active_days
     FROM silver.active_zone_minutes GROUP BY 1
 )
 SELECT COALESCE(s.week_start, a.week_start) AS week_start,
@@ -362,6 +362,34 @@ def ensure_schemas() -> None:
                         index=sql.Identifier(f"{family}_source_file_idx"),
                     )
                 )
+            # Same for silver: build_family deletes by _source_file once per takeout file,
+            # and real families carry ~1.4k files (an unindexed full scan per file is O(n^2)).
+            cur.execute(
+                "SELECT table_name FROM information_schema.columns "
+                "WHERE table_schema = 'silver' AND column_name = '_source_file'"
+            )
+            for (table,) in cur.fetchall():
+                cur.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index} ON silver.{} (_source_file)"
+                    ).format(
+                        sql.Identifier(table),
+                        index=sql.Identifier(f"{table}_source_file_idx"),
+                    )
+                )
+            # The gold views aggregate silver.activity by UTC day and ISO week; these
+            # expression indexes (the exact immutable expressions the views use) keep those
+            # reads inside the assistant's 10s execute contract on the real
+            # multi-million-row family instead of a full heap scan per query.
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS activity_day_steps_idx "
+                "ON silver.activity (((\"timestamp\" AT TIME ZONE 'UTC')::date), steps)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS activity_week_steps_idx "
+                "ON silver.activity "
+                "((date_trunc('week', \"timestamp\" AT TIME ZONE 'UTC')::date), steps)"
+            )
         password = config.dashboard_password()
         if password:
             provision_dashboard_role(conn, password)

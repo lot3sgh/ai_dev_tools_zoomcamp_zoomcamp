@@ -149,3 +149,47 @@ def test_activity_append_mode_keeps_duplicate_pairs(reset_db, source_dir):
     assert _sync(source_dir) == 0                     # rerun: no duplicates
     with db.connect() as conn:
         assert _q(conn, "SELECT count(*) FROM silver.activity")[0][0] == 3
+
+def test_activity_float_formatted_integers_are_typed(reset_db, source_dir):
+    """Regression (real takeout): the Google Health export writes nominally-integer
+    activity columns as floats ("81.0"); they type to int, not reject."""
+    from pipeline import db
+
+    make_zip(
+        source_dir / "takeout-test.zip",
+        {
+            "Takeout/Google Health/Physical Activity_GoogleData/activity.csv":
+                "timestamp,steps,beats_per_minute,distance,data_source\n"
+                "2026-09-19T23:59:00Z,0.0,65.0,0.1,Charge 4\n"
+                "2026-09-19T23:58:00Z,BADROW,65,0.1,Charge 4\n",
+        },
+    )
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        row = _q(conn, "SELECT steps, beats_per_minute FROM silver.activity "
+                       "WHERE timestamp = '2026-09-19T23:59:00+00:00'")[0]
+        assert row == (0, 65)
+        rej = _q(conn, "SELECT reason FROM silver.rejected_rows WHERE family = "
+                        "'physical_activity_googledata'")
+        assert [r[0] for r in rej] == ["not an integer: 'BADROW'"]
+
+
+def test_stress_midnight_datetime_types_to_calendar_date(reset_db, source_dir):
+    """Regression (real takeout): Stress Score's date column is a midnight datetime
+    ("2024-07-27T00:00:00"); it types to the calendar date, not a reject."""
+    from pipeline import db
+
+    make_zip(
+        source_dir / "takeout-test.zip",
+        {
+            "Takeout/Google Health/Stress Score/stress.csv":
+                "date,stress_score,sleep_points,responsiveness_points,exertion_points,status\n"
+                "2024-07-27T00:00:00,45,10,20,15,CALM\n",
+        },
+    )
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        row = _q(conn, "SELECT date, stress_score FROM silver.stress")[0]
+        assert str(row[0]) == "2024-07-27" and row[1] == 45
+        assert _q(conn, "SELECT count(*) FROM silver.rejected_rows "
+                        "WHERE family = 'stress_score'")[0][0] == 0

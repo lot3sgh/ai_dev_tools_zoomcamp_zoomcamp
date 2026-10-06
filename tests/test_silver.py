@@ -118,3 +118,27 @@ def _sleep_ok_only() -> str:
         "53612104642,2026-09-19T10:01:00Z,86,,87,,97,74,0.17135761589403972\n"
         "53603187472,2026-09-18T07:43:30Z,81,,82,,83,75,0.14442013129102846\n"
     )
+
+def test_silver_source_file_index_exists(reset_db, source_dir):
+    """build_family deletes by _source_file once per takeout file, and real families
+    carry ~1.4k files per family; without the index the DELETE full-scans every time."""
+    from pipeline import db
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        idx = _q(conn, "SELECT indexdef FROM pg_indexes WHERE schemaname='silver' "
+                       "AND tablename='activity' AND indexdef LIKE '%(_source_file)%'")
+        assert idx, "silver.activity needs an index on _source_file"
+
+
+def test_gold_aggregate_indexes_exist(reset_db, source_dir):
+    """The gold views aggregate silver.activity by day and ISO week; expression
+    indexes keep those reads bounded on multi-million-row real takeouts."""
+    from pipeline import db
+
+    assert _sync(source_dir) == 0
+    with db.connect() as conn:
+        names = {r[0] for r in _q(
+            conn, "SELECT indexname FROM pg_indexes "
+                  "WHERE schemaname='silver' AND tablename='activity'")}
+        assert {"activity_day_steps_idx", "activity_week_steps_idx"} <= names
